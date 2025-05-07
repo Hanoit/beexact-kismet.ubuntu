@@ -1,0 +1,7 @@
+/.env
+/build/
+/dist/
+/*.csv
+*.kismet
+*.log
+/venv/
