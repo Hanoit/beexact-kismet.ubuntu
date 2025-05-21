@@ -97,13 +97,29 @@ class KismetAnalyzer:
             session.close()  # Close the session to free up resources
 
     def filter_near_coord(self, sql_result, flip_coord):
-
+        # Check if we should process devices without location
+        process_without_location = bool(int(os.getenv('PROCESS_WITHOUT_LOCATION', 1)))
+        
+        if not sql_result:
+            return sql_result
+            
         # Convert the SQL result into a DataFrame
         df = pd.DataFrame(sql_result, columns=[
             'first_time', 'last_time', 'devkey', 'phyname', 'devmac', 'strongest_signal',
             'min_lat', 'min_lon', 'max_lat', 'max_lon', 'avg_lat', 'avg_lon', 'bytes_data', 'type', 'device', 'unknow'
         ])
-
+        
+        # Check if all devices have zero coordinates
+        all_zero_coords = (df['avg_lat'] == 0).all() and (df['avg_lon'] == 0).all()
+        
+        if all_zero_coords and process_without_location:
+            logger.info("All devices have zero coordinates - skipping location-based filtering")
+            # For devices without location, just keep the strongest signal per MAC
+            df['mac_prefix'] = df['devmac'].str.replace(':', '').str[:8]
+            filtered_df = df.loc[df.groupby('mac_prefix')['strongest_signal'].idxmax()]
+            return filtered_df.drop(columns=['mac_prefix']).values.tolist()
+        
+        # Original location-based filtering logic
         if not flip_coord:
             # Create a GeoDataFrame with the geographic points
             gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.max_lon, df.max_lat), crs="EPSG:4326")
@@ -160,20 +176,42 @@ class KismetAnalyzer:
             raise RuntimeError(f"Failed to count record from kismet file \n {e}") from e
 
         try:
-            sql = f"""
-                    WITH RankedDevices AS (
-                        SELECT
-                            *,
-                            ROW_NUMBER() OVER (PARTITION BY devmac ORDER BY strongest_signal DESC) as rn
-                        FROM devices
-                        WHERE type = 'Wi-Fi AP'
-                    )
-                    SELECT * 
-                    FROM RankedDevices 
-                    WHERE rn = 1 
-                      AND strongest_signal <> 0 
-                      AND (avg_lat <> 0 OR avg_lon <> 0);
-                """
+            # Check if we should process devices without location
+            process_without_location = bool(int(os.getenv('PROCESS_WITHOUT_LOCATION', 1)))
+            
+            if process_without_location:
+                # Process devices even without location data
+                sql = f"""
+                        WITH RankedDevices AS (
+                            SELECT
+                                *,
+                                ROW_NUMBER() OVER (PARTITION BY devmac ORDER BY strongest_signal DESC) as rn
+                            FROM devices
+                            WHERE type = 'Wi-Fi AP'
+                        )
+                        SELECT * 
+                        FROM RankedDevices 
+                        WHERE rn = 1 
+                          AND strongest_signal <> 0;
+                    """
+                logger.info("Processing devices without location data (PROCESS_WITHOUT_LOCATION=1)")
+            else:
+                # Original query - only devices with location
+                sql = f"""
+                        WITH RankedDevices AS (
+                            SELECT
+                                *,
+                                ROW_NUMBER() OVER (PARTITION BY devmac ORDER BY strongest_signal DESC) as rn
+                            FROM devices
+                            WHERE type = 'Wi-Fi AP'
+                        )
+                        SELECT * 
+                        FROM RankedDevices 
+                        WHERE rn = 1 
+                          AND strongest_signal <> 0 
+                          AND (avg_lat <> 0 OR avg_lon <> 0);
+                    """
+                logger.info("Processing only devices with location data (PROCESS_WITHOUT_LOCATION=0)")
 
             # Execute the query
             cursor = self.db.cursor()

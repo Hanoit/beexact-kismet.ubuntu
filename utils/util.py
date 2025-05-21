@@ -5,8 +5,7 @@ import re
 import sys
 import uuid
 from sqlalchemy import inspect
-from services.MacVendorFinder import MacVendorFinder
-from services.MacProviderFinder import MacProviderFinder
+
 from typing import NamedTuple
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 import logging
@@ -117,11 +116,15 @@ def format_unix_timestamp_to_string(unix_timestamp, format_type='default'):
 
 
 def parse_vendor(mac_address, session):
+    # Import here to avoid circular import
+    from services.MacVendorFinder import MacVendorFinder
     finder = MacVendorFinder(session)
     return finder.get_vendor(mac_address)
 
 
 def parse_provider(mac_address, ssid, session):
+    # Import here to avoid circular import
+    from services.MacProviderFinder import MacProviderFinder
     finder = MacProviderFinder(session)
     return finder.get_provider(mac_address, ssid)
 

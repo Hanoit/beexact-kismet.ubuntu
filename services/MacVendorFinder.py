@@ -1,5 +1,6 @@
 import os
 import threading
+import time
 import requests
 from sqlalchemy.exc import IntegrityError
 from models.DBKismetModels import MACVendorTable
@@ -13,12 +14,26 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 db_lock = threading.Lock()
+api_lock = threading.Lock()
+last_api_call = 0
+MIN_API_INTERVAL = 0.1  # Minimum 100ms between API calls
 
 # Load environment variables from .env file
 load_dotenv()
 
 
 def fetch_vendor_from_api(mac_id):
+    global last_api_call
+    
+    # Rate limiting
+    with api_lock:
+        current_time = time.time()
+        time_since_last_call = current_time - last_api_call
+        if time_since_last_call < MIN_API_INTERVAL:
+            sleep_time = MIN_API_INTERVAL - time_since_last_call
+            time.sleep(sleep_time)
+        last_api_call = time.time()
+    
     # Reemplaza 'Your_API_Token' con tu token real
     api_token = os.getenv('API_KEY_MACVENDOR', None)
     url = f"https://api.macvendors.com/v1/lookup/{mac_id}" if api_token else f"https://api.macvendors.com/{mac_id}"
@@ -29,17 +44,30 @@ def fetch_vendor_from_api(mac_id):
     } if api_token else {}
 
     try:
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=10)
         if response.ok:
             try:
                 data = response.json()
-                return data.get('organization_name', None)
+                # Try to get organization_name from the new API format
+                if 'data' in data and 'organization_name' in data['data']:
+                    return data['data']['organization_name']
+                elif 'organization_name' in data:
+                    return data['organization_name']
+                else:
+                    # Fallback to plain text response (old API format)
+                    return response.text.strip()
             except ValueError as e:
-                logger.error(f"JSON parse failed for MAC {mac_id}: {response.text}")
-                return None
-        else:
+                # If JSON parsing fails, try plain text response
+                logger.debug(f"JSON parse failed for MAC {mac_id}, trying plain text: {response.text}")
+                return response.text.strip() if response.text.strip() else None
+        elif response.status_code == 404:
+            # MAC not found in database - this is normal for many MACs
+            logger.debug(f"MAC {mac_id} not found in MacVendor database (404)")
+            return None
+        elif response.status_code != 404:  # Don't log 404s as warnings since they're normal
             logger.warning(f"MacVendor API returned status {response.status_code} for MAC {mac_id}: {response.text}")
     except requests.RequestException as e:
+        logger.error(f"Request exception for MAC {mac_id}: {e}")
         raise e
     return None
 

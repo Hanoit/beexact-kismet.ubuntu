@@ -119,7 +119,17 @@ class ExtDeviceModel(model.Device):
         self.vendor = util.parse_vendor(self.mac, self.__session)
         self.provider = util.parse_provider(self.mac, self.ssid, self.__session)
 
+        # Check if we should process devices without location
+        from dotenv import load_dotenv
+        import os
+        load_dotenv()
+        process_without_location = bool(int(os.getenv('PROCESS_WITHOUT_LOCATION', 1)))
+        
         if self.location.lon != "0" and self.location.lat != "0":
+            self.RSSI = self.__base.get('strongest_signal', 0)
+            self.firstSeen = self.__base.get('first_time', 0)
+        elif process_without_location:
+            # Process devices without location data
             self.RSSI = self.__base.get('strongest_signal', 0)
             self.firstSeen = self.__base.get('first_time', 0)
         else:
