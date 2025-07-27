@@ -5,6 +5,7 @@ from watchdog.events import FileSystemEventHandler
 from dotenv import load_dotenv
 import logging
 from utils.file_monitor import FileStabilityMonitor
+from services.FileQueueProcessor import FileQueueProcessor
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -17,6 +18,7 @@ load_dotenv()
 class EventHandler(FileSystemEventHandler):
     def __init__(self, processor, stability_time=5):
         self.__processor = processor
+        self.__queue_processor = FileQueueProcessor(processor, max_queue_size=10)
         self.__stability_monitor = FileStabilityMonitor(
             stability_time=stability_time,
             max_wait_time=300,  # 5 minutes max wait
@@ -42,12 +44,13 @@ class EventHandler(FileSystemEventHandler):
                 if self.__stability_monitor.wait_for_stability(event.src_path):
                     # Then wait for file accessibility
                     if self.__stability_monitor.wait_for_accessibility(event.src_path, timeout=30):
-                        logger.info(f"File {filename} is stable and accessible, starting processing...")
-                        try:
-                            self.__processor.process_file(event.src_path)
-                            logger.info(f"Successfully processed file: {filename}")
-                        except Exception as e:
-                            logger.error(f"Error processing file {filename}: {e}")
+                        logger.info(f"File {filename} is stable and accessible, adding to processing queue...")
+                        
+                        # Add file to processing queue instead of processing immediately
+                        if self.__queue_processor.add_file_to_queue(event.src_path):
+                            logger.info(f"✅ File {filename} added to processing queue")
+                        else:
+                            logger.warning(f"⚠️  Could not add file {filename} to queue (queue full or already queued)")
                     else:
                         logger.warning(f"File {filename} is not accessible after stability check. Skipping processing.")
                 else:
@@ -63,6 +66,7 @@ class WatchingDirectory:
         self.__check_interval = int(os.getenv("CHECK_INTERVAL", 300))
         self.__directory = os.getenv("WATCH_DIRECTORY", ".")
         self.__processor = processor
+        self.__queue_processor = None
         
         # Validate directory exists
         if not os.path.exists(self.__directory):
@@ -76,6 +80,7 @@ class WatchingDirectory:
         logger.info(f"Starting to watch directory: {self.__directory}")
         
         event_handler = EventHandler(self.__processor)
+        self.__queue_processor = event_handler._EventHandler__queue_processor
         observer = Observer()
         
         try:
@@ -83,14 +88,23 @@ class WatchingDirectory:
             observer.start()
             logger.info("Directory watcher started successfully")
             
+            # Log initial status
+            self.__log_queue_status()
+            
             try:
                 while True:
                     time.sleep(self.__check_interval)
+                    # Log queue status periodically
+                    self.__log_queue_status()
             except KeyboardInterrupt:
                 logger.info("Received interrupt signal, stopping directory watch...")
             except Exception as e:
                 logger.error(f"Unexpected error in watching loop: {e}")
             finally:
+                # Stop queue processor
+                if self.__queue_processor:
+                    self.__queue_processor.stop()
+                
                 observer.stop()
                 observer.join()
                 logger.info("Directory watcher stopped")
@@ -98,3 +112,17 @@ class WatchingDirectory:
         except Exception as e:
             logger.error(f"Error starting directory watcher: {e}")
             raise
+    
+    def __log_queue_status(self):
+        """Log current queue status"""
+        if self.__queue_processor:
+            status = self.__queue_processor.get_queue_status()
+            if status['is_processing'] or status['queue_size'] > 0:
+                logger.info(f"📊 Queue Status: {status['queue_size']} files queued, "
+                           f"processing: {status['current_file'] or 'None'}")
+    
+    def get_queue_summary(self) -> str:
+        """Get queue processing summary"""
+        if self.__queue_processor:
+            return self.__queue_processor.get_processing_summary()
+        return "Queue processor not available"

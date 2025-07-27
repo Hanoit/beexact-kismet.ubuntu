@@ -18,11 +18,16 @@ api_lock = threading.Lock()
 last_api_call = 0
 MIN_API_INTERVAL = 0.1  # Minimum 100ms between API calls
 
+# Retry configuration
+MAX_RETRIES = 3
+BASE_DELAY = 1.0  # Base delay in seconds
+MAX_DELAY = 10.0  # Maximum delay in seconds
+
 # Load environment variables from .env file
 load_dotenv()
 
 
-def fetch_vendor_from_api(mac_id):
+def fetch_vendor_from_api(mac_id, retry_count=0):
     global last_api_call
     
     # Rate limiting
@@ -64,11 +69,36 @@ def fetch_vendor_from_api(mac_id):
             # MAC not found in database - this is normal for many MACs
             logger.debug(f"MAC {mac_id} not found in MacVendor database (404)")
             return None
-        elif response.status_code != 404:  # Don't log 404s as warnings since they're normal
+        elif response.status_code in [500, 502, 503, 504, 520, 521, 522, 523, 524]:
+            # Server errors that might be transient
+            if retry_count < MAX_RETRIES:
+                # Calculate exponential backoff delay
+                delay = min(BASE_DELAY * (2 ** retry_count), MAX_DELAY)
+                logger.warning(f"MacVendor API returned status {response.status_code} for MAC {mac_id}. "
+                             f"Retrying in {delay:.1f}s (attempt {retry_count + 1}/{MAX_RETRIES})")
+                time.sleep(delay)
+                return fetch_vendor_from_api(mac_id, retry_count + 1)
+            else:
+                # Max retries reached
+                logger.error(f"MacVendor API failed after {MAX_RETRIES} retries for MAC {mac_id}. "
+                           f"Final status: {response.status_code}. Response: {response.text[:200]}...")
+                return None
+        else:
+            # Other non-404 errors
             logger.warning(f"MacVendor API returned status {response.status_code} for MAC {mac_id}: {response.text}")
+            return None
     except requests.RequestException as e:
-        logger.error(f"Request exception for MAC {mac_id}: {e}")
-        raise e
+        if retry_count < MAX_RETRIES:
+            # Calculate exponential backoff delay
+            delay = min(BASE_DELAY * (2 ** retry_count), MAX_DELAY)
+            logger.warning(f"Request exception for MAC {mac_id}: {e}. "
+                         f"Retrying in {delay:.1f}s (attempt {retry_count + 1}/{MAX_RETRIES})")
+            time.sleep(delay)
+            return fetch_vendor_from_api(mac_id, retry_count + 1)
+        else:
+            # Max retries reached
+            logger.error(f"Request failed after {MAX_RETRIES} retries for MAC {mac_id}: {e}")
+            raise e
     return None
 
 
