@@ -25,6 +25,7 @@ class ExtDeviceModel(model.Device):
         self.__session = session
         self.__base = base
         self.__ssid = ""
+        self.__sequential_id = base.get('sequential_id', 'UNKNOWN') if base else 'UNKNOWN'
 
     @property
     def RSSI(self) -> int:
@@ -89,6 +90,11 @@ class ExtDeviceModel(model.Device):
     def ssid(self, value: str = ""):
         self.__ssid = value
 
+    @property
+    def sequential_id(self) -> str:
+        """Get the sequential ID for tracking."""
+        return self.__sequential_id
+
     def from_json(self, dev: dict, flip_coord: bool = False, strongest: bool = False):
         """
         Create an ExtDeviceModel instance from JSON data.
@@ -116,13 +122,13 @@ class ExtDeviceModel(model.Device):
         self.commonname = parse_commonname(dev)
         self.phyname = parse_phyname(dev)
         self.encryption = parse_encryption(dev)
-        self.vendor = util.parse_vendor(self.mac, self.__session)
+        self.vendor = util.parse_vendor(self.mac, self.__session, self.__sequential_id)
         self.provider = util.parse_provider(self.mac, self.ssid, self.__session)
 
         # Check if we should process devices without location
         from dotenv import load_dotenv
         import os
-        load_dotenv()
+        load_dotenv('.env')
         process_without_location = bool(int(os.getenv('PROCESS_WITHOUT_LOCATION', 1)))
         
         if self.location.lon != "0" and self.location.lat != "0":

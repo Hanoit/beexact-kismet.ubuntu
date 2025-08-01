@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv('.env')
 
 
 class KismetAnalyzer:
@@ -41,6 +41,10 @@ class KismetAnalyzer:
 
     def process_row(self, row, list_SSID_forbidden, ssid, encryption, strongest, total_rows, current_index,
                     flip_coord):
+        # Add unique sequential ID for tracking
+        import threading
+        sequential_id = f"R{current_index:06d}-T{threading.current_thread().ident % 10000:04d}"
+        
         base = {
             'first_time': row[0],
             'last_time': row[1],
@@ -55,7 +59,8 @@ class KismetAnalyzer:
             'avg_lat': row[10],
             'avg_lon': row[11],
             'bytes_data': row[12],
-            'type': row[13]
+            'type': row[13],
+            'sequential_id': sequential_id  # Add sequential ID to base
         }
         # Start a new session for each thread
         session: Session = self.__Session()

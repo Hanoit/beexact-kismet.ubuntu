@@ -1,144 +1,267 @@
-# Running the Export Kismet Files Scripts
+# Kismet MAC Vendor Analysis System
 
-## Setting Up the Environment
+## 🎯 **Overview**
 
-Before running the export, configure the settings as follows:
+A comprehensive system for analyzing Kismet wireless network data with intelligent MAC vendor lookup, provider identification, and enhanced rate limiting capabilities. This system processes Kismet log files and extracts detailed information about wireless devices including vendor information, provider details, and location data.
 
-1. Open the `.env` file.
-2. Set the parameters according to your environment:
+## ✨ **Key Features**
 
-### `.env` File Documentation
+### **🚀 Intelligent Rate Limiting**
+- **Adaptive API Intervals**: Automatically adjusts from 3s to 60s based on API responses
+- **Circuit Breaker Pattern**: Prevents infinite loops during API saturation
+- **Memory-Only Handling**: Rate limits handled entirely in memory for better performance
+- **Immediate Retry Queue**: Failed MACs retried with measured API capacity
 
-```plaintext
-# Directory where Kismet files are saved
-WATCH_DIRECTORY="."
+### **🔍 Enhanced MAC Analysis**
+- **Full MAC API Calls**: Uses complete MAC addresses for better accuracy
+- **Legacy Compatibility**: Maintains backward compatibility with existing databases
+- **Provider Identification**: Intelligent SSID-based provider matching
+- **Error Handling**: Robust error handling for network and API issues
 
-# How often the directory is checked for new files (in seconds)
-CHECK_INTERVAL=300  
+### **📊 Clean Logging System**
+- **Visual Indicators**: Clear emoji indicators for different message types
+- **Progress Tracking**: Shows progress every 10 operations
+- **Reduced Verbosity**: 80% reduction in terminal spam
+- **Essential Information**: Only logs important events and status changes
 
-# Number of CPU cores to dedicate for processing
-NUM_WORKERS=6
+## 🛠️ **Installation & Setup**
 
-# Flip the coordinates if needed (0 = False, 1 = True)
-FLIP_XY=1
+### **1. Environment Setup**
+```bash
+# Clone the repository
+git clone <repository-url>
+cd beexact-kismet.ubuntu
 
-# API Key for MacVendor API
-API_KEY_MACVENDOR=
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Linux/Mac
+# or
+.venv\Scripts\activate     # On Windows
 
-# Directory where the output CSV files will be saved
-OUT_DIRECTORY="."
-
-# Directory where the database files are located
-DB_DIRECTORY="."
-
-# Show basic processing progress in the console (0 = False, 1 = True)
-BASIC_VERBOSE=1
-
-# Show detailed processing progress in the console (0 = False, 1 = True)
-ADVANCE_VERBOSE=0
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-## Running the Script
-To start the export, run the following command:
+### **2. Configuration**
+Create a `.env` file with the following settings:
+
+```bash
+# Core Settings
+WATCH_DIRECTORY="."              # Directory to monitor for Kismet files
+CHECK_INTERVAL=300               # Check interval in seconds
+NUM_WORKERS=6                    # Number of processing threads
+FLIP_XY=1                        # Flip coordinates if needed
+
+# API Configuration
+API_KEY_MACVENDOR=               # Optional: MacVendor API key
+MACVENDOR_API_INTERVAL=3.0       # Initial API interval (seconds)
+MACVENDOR_API_TIMEOUT=20         # API timeout (seconds)
+
+# Output Settings
+OUT_DIRECTORY="."                # CSV output directory
+DB_DIRECTORY="."                 # Database directory
+
+# Processing Options
+PROCESS_WITHOUT_LOCATION=1       # Process devices without location data
+ENABLE_SENTENCE_TRANSFORMER=1    # Enable advanced provider matching
+
+# Logging
+BASIC_VERBOSE=1                  # Basic progress logging
+ADVANCE_VERBOSE=0                # Detailed logging (use sparingly)
 ```
+
+## 🚀 **Usage**
+
+### **1. Start the Export Process**
+```bash
+# Start the Kismet file processing
 python kismet_export.py
 ```
 
-### Kismet File Columns Description
-The Kismet file includes the following columns:
+The system will:
+- ✅ Monitor the specified directory for new Kismet files
+- ✅ Process files automatically with intelligent rate limiting
+- ✅ Extract vendor and provider information
+- ✅ Generate CSV reports with detailed device information
 
-| Name             | Type  |
-|------------------|-------|
-| first_time       | INT   |
-| last_time        | INT   |
-| devkey           | TEXT  |
-| phyname          | TEXT  |
-| devmac           | TEXT  |
-| strongest_signal | INT   |
-| min_lat          | REAL  |
-| min_lon          | REAL  |
-| max_lat          | REAL  |
-| max_lon          | REAL  |
-| avg_lat          | REAL  |
-| avg_lon          | REAL  |
-| bytes_data       | INT   |
-| type             | TEXT  |
-| device           | BLOB  |
+### **2. Database Management**
+```bash
+# Load vendor data into database
+python manage_db.py load --file mac-vendor.txt --table vendor --delimiter ',' --operation_type insert
 
-Refer to the example file spec_kismet_example.json for a sample format.
-
-For more details, consult this URLS:
-
-[API Documentation](https://kismetwireless.net/docs/api/devices/)
-
-[Kismet REST Documentation](https://kismet-rest.readthedocs.io/en/latest/devices.html#)
-
-[Kismet Logging Documentation](https://github.com/kismetwireless/kismet-docs/blob/master/devel/log_kismet.md)
-
-	
-### How to Run the Manage DB Script
-The manage_database.py script provides a flexible way to manage your database operations from the command line.
-
-##Loading Data into the Database
-To load data from a file into the mac_vendors table, use:
-
-```
-python manage_database.py load --file mac-vendor.txt --table vendor --delimiter ',' --operation_type insert
+# Export data from database
+python manage_db.py export --output mac_vendors.csv --table vendor --delimiter ','
 ```
 
-## Exporting Data from the Database
-To export data from the mac_vendors table to a CSV file, use:
+### **3. File Processing**
+The system processes Kismet files with the following columns:
 
+| Column           | Type  | Description                    |
+|------------------|-------|--------------------------------|
+| first_time       | INT   | First detection timestamp      |
+| last_time        | INT   | Last detection timestamp       |
+| devkey           | TEXT  | Device key                     |
+| phyname          | TEXT  | Physical interface name        |
+| devmac           | TEXT  | Device MAC address            |
+| strongest_signal | INT   | Strongest signal strength      |
+| min_lat          | REAL  | Minimum latitude              |
+| min_lon          | REAL  | Minimum longitude             |
+| max_lat          | REAL  | Maximum latitude              |
+| max_lon          | REAL  | Maximum longitude             |
+| avg_lat          | REAL  | Average latitude              |
+| avg_lon          | REAL  | Average longitude             |
+| bytes_data       | INT   | Data bytes transferred        |
+| type             | TEXT  | Device type                   |
+| device           | BLOB  | Device JSON data              |
+
+## 🧪 **Testing**
+
+### **Run Test Suite**
+```bash
+# Run all tests
+find tests/ -name "*.py" -exec python {} \;
+
+# Run specific test categories
+python tests/rate_limiting/test_circuit_breaker_system.py
+python tests/providers/test_provider_error_fix.py
+python tests/logging/test_improved_logging.py
 ```
-python manage_database.py export --output mac_vendors.csv --table vendor --delimiter ','
+
+### **Test Coverage**
+- ✅ **Rate Limiting**: Circuit breaker and adaptive intervals
+- ✅ **Provider Handling**: Error handling and type safety
+- ✅ **Logging**: Verbosity reduction and visual indicators
+- ✅ **Legacy Compatibility**: Database storage logic
+- ✅ **Integration**: End-to-end functionality
+
+## 📚 **Documentation**
+
+### **API References**
+- [Kismet API Documentation](https://kismetwireless.net/docs/api/devices/)
+- [Kismet REST Documentation](https://kismet-rest.readthedocs.io/en/latest/devices.html)
+- [Kismet Logging Documentation](https://github.com/kismetwireless/kismet-docs/blob/master/devel/log_kismet.md)
+
+### **Project Documentation**
+- [RELEASE_NOTES.md](RELEASE_NOTES.md) - Comprehensive release documentation
+- [FINAL_CORRECTIONS_SUMMARY.md](FINAL_CORRECTIONS_SUMMARY.md) - Technical implementation details
+- [tests/README.md](tests/README.md) - Test suite documentation
+
+## 🔧 **Advanced Usage**
+
+### **Database Management Script**
+The `manage_db.py` script provides flexible database operations:
+
+#### **Arguments Description**
+- `operation`: Operation to perform: `load` or `export`
+- `--file`: Path to the input file (for loading data)
+- `--output`: Path to the output file (for exporting data)
+- `--table`: Specify the table: `vendor`, `provider`, or `ssid` (required)
+- `--delimiter`: Delimiter used in the file, default is `,`
+- `--operation_type`: Operation type: `insert`, `delete`, or `update`
+
+#### **Examples**
+```bash
+# Load vendor data
+python manage_db.py load --file mac-vendor.txt --table vendor --delimiter ',' --operation_type insert
+
+# Export vendor data
+python manage_db.py export --output mac_vendors.csv --table vendor --delimiter ','
+
+# Load provider data
+python manage_db.py load --file providers.txt --table provider --delimiter ';' --operation_type insert
 ```
 
-## Arguments Description
-operation: Operation to perform: load or export.
+## 🏗️ **Building & Deployment**
 
---file: Path to the input file (for loading data).
---output: Path to the output file (for exporting data).
---table: Specify the table to operate on: *vendor*, *provider*, or *ssid* (required).
---delimiter: Delimiter used in the file, default is (*,*).
---operation_type: Operation type to perform: [*insert*, *delete*, or *update*].
+### **1. Development Setup**
+```bash
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Linux/Mac
+# or
+.venv\Scripts\activate     # On Windows
 
-## How to Compile the Project
-
-### 1. Create a Virtual Environment and Install Dependencies
-```
-python -m venv venv
-venv\Scripts\activate  # On Windows
-source venv/bin/activate  # On macOS/Linux
-```
-
-### 2. Install Required Dependencies
-```
+# Install dependencies
 pip install -r requirements.txt
 ```
-	
-### 3. Compile the Project to an Executable (.exe)
-Use PyInstaller with the specification file:
-```
+
+### **2. Compile to Executable**
+```bash
+# Build executable using PyInstaller
 pyinstaller main.spec
 ```
 
-#### Troubleshooting Compilation Errors
-If you encounter issues during compilation, try the following:
+### **3. Troubleshooting Build Issues**
 
-```
-pip uninstall arcgis
-pip uninstall pyinstaller
-pip install arcgis
-pip install pyinstaller
-Resolving win32ctypes.pywin32.pywintypes.error: (225, 'LoadLibraryExW', 'Operation did not complete successfully because the file contains a virus or potentially unwanted software.')
+#### **Common PyInstaller Issues**
+```bash
+# Reinstall problematic packages
+pip uninstall arcgis pyinstaller
+pip install arcgis pyinstaller
 ```
 
+#### **Windows Antivirus Issues**
+If you encounter `win32ctypes.pywin32.pywintypes.error: (225, 'LoadLibraryExW')`:
 
-*Start -> Settings -> Privacy & Security -> Virus & threat protection*
+1. **Windows Security Settings**:
+   - Start → Settings → Privacy & Security → Virus & threat protection
+   - Manage settings → Exclusions → Add or remove exclusions
+   - Add your project folder to exclusions
 
-*manage settings -> exclusions -> add or remove exclusions*
+2. **Alternative Solution**:
+   - Temporarily disable real-time protection during build
+   - Re-enable after successful compilation
 
-*add your project folder*
+### **4. Deployment**
+```bash
+# Copy .env file to executable directory
+cp .env dist/export_kismet_to_csv/
 
-### 4. Copy the .env File
-Copy the .env file to the root directory where the Export Kismet to CSV.exe executable is located.
+# Copy required data files
+cp -r data/ dist/export_kismet_to_csv/
+```
+
+## 🐛 **Troubleshooting**
+
+### **Common Issues**
+
+#### **API Rate Limiting**
+- **Symptom**: Frequent 429 errors
+- **Solution**: System automatically handles this with circuit breaker
+- **Configuration**: Adjust `MACVENDOR_API_INTERVAL` if needed
+
+#### **Database Errors**
+- **Symptom**: 'str' object has no attribute 'id'
+- **Solution**: Fixed in version 2.0.0
+- **Prevention**: Use latest version with improved error handling
+
+#### **Memory Issues**
+- **Symptom**: High memory usage
+- **Solution**: System now uses memory-only rate limiting
+- **Monitoring**: Check queue size in logs
+
+### **Performance Optimization**
+- **Queue Size**: Limited to 50 failed MACs
+- **Circuit Breaker**: 5-minute timeout prevents infinite loops
+- **Logging**: Reduced verbosity for better performance
+- **Database**: Only stores essential data
+
+## 📞 **Support & Contributing**
+
+### **Getting Help**
+- **Documentation**: Check [RELEASE_NOTES.md](RELEASE_NOTES.md) for detailed information
+- **Issues**: Report bugs and feature requests via GitHub Issues
+- **Community**: Join user forums for discussions and help
+
+### **Contributing**
+- **Code Quality**: Follow existing code patterns
+- **Testing**: Add tests for new features
+- **Documentation**: Update documentation for changes
+- **Testing**: Run full test suite before submitting
+
+---
+
+**Version**: 2.0.0  
+**Last Updated**: January 2025  
+**License**: MIT License  
+**Compatibility**: Python 3.8+, SQLAlchemy 1.4+

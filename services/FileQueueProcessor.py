@@ -13,7 +13,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Load environment variables
-load_dotenv()
+load_dotenv('.env')
 
 
 class FileQueueProcessor:

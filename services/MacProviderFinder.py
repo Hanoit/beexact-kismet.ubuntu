@@ -1,6 +1,7 @@
 import json
 import re
 import threading
+import os
 from sqlalchemy.exc import IntegrityError
 from models.DBKismetModels import MACProviderTable, MACBaseProviderTable
 from repository.RepositoryImpl import RepositoryImpl
@@ -8,13 +9,16 @@ from services.SentenceEmbeddings import find_provider
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv('.env')
 db_lock = threading.Lock()
 
 
 class MacProviderFinder:
+
     def __init__(self, session):
         self.__session = session
+        # Check if sentence transformer processing is enabled
+        self.__enable_sentence_transformer = bool(int(os.getenv('ENABLE_SENTENCE_TRANSFORMER', 1)))
 
     def format_separator(self, mac_address, separator):
         formatted_mac = mac_address.replace(':', separator)
@@ -38,7 +42,7 @@ class MacProviderFinder:
             existing_provider = provider_finder.search_by_id(mac_id)
 
         if existing_provider:
-            base_provider = existing_provider.base_provider.provider_name
+            base_provider = existing_provider.base_provider
             return base_provider
         else:
             mac_id = self.format_mac_id(mac_address, position=4, separator="")
@@ -46,17 +50,20 @@ class MacProviderFinder:
                 existing_provider = provider_finder.search_sql_by_attr(f'{mac_id}', 'mac_sub_prefix')
 
             if existing_provider:
-                base_provider = existing_provider.base_provider.provider_name
+                base_provider = existing_provider.base_provider
                 return base_provider
             return None
 
     def get_provider(self, mac_address, ssid):
         # Try to find a provider based on the SSID
         base_provider = self.simple_match_provider_from_ssid(ssid)
-        if not base_provider:
+        
+        # Only use sentence transformer if enabled and simple match failed
+        if not base_provider and self.__enable_sentence_transformer:
             base_provider = self.advance_match_provider_from_ssid(ssid)
-            if not base_provider:
-                return self.get_provider_by_mac(mac_address)
+        
+        if not base_provider:
+            base_provider = self.get_provider_by_mac(mac_address)
 
         if base_provider:
             mac_id = self.format_mac_id(mac_address, position=5, separator="")
@@ -66,17 +73,29 @@ class MacProviderFinder:
                 if not existing_provider:
                     try:
                         mac_sub_prefix = self.format_mac_id(mac_address, position=4, separator="")
-                        new_provider = MACProviderTable(id=mac_id, mac_sub_prefix=mac_sub_prefix,
-                                                        base_provider_id=base_provider.id)
-                        # print(f"{ssid} is {base_provider.provider_name}")
-                        self.__session.add(new_provider)
-                        self.__session.commit()
+                        # Ensure base_provider is an object with id attribute
+                        if hasattr(base_provider, 'id'):
+                            new_provider = MACProviderTable(id=mac_id, mac_sub_prefix=mac_sub_prefix,
+                                                            base_provider_id=base_provider.id)
+                            # print(f"{ssid} is {base_provider.provider_name}")
+                            self.__session.add(new_provider)
+                            self.__session.commit()
+                        else:
+                            # If base_provider is a string, we can't create the relationship
+                            # Just return the provider name without saving to database
+                            pass
                     except IntegrityError:
                         self.__session.rollback()
                     except Exception as e:
                         self.__session.rollback()  # Rollback on general exceptions
                         raise e
-                return base_provider.provider_name
+                
+                # Return provider name, handling both object and string cases
+                if hasattr(base_provider, 'provider_name'):
+                    return base_provider.provider_name
+                else:
+                    # If base_provider is already a string, return it directly
+                    return base_provider
         return None
 
     def simple_match_provider_from_ssid(self, ssid):
@@ -106,6 +125,10 @@ class MacProviderFinder:
         return None
 
     def advance_match_provider_from_ssid(self, ssid):
+        # Only perform sentence transformer matching if enabled
+        if not self.__enable_sentence_transformer:
+            return None
+            
         base_providers = RepositoryImpl(MACBaseProviderTable, self.__session)
         base_providers_result = base_providers.search_all()
         if base_providers_result:

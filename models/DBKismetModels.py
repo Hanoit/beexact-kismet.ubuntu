@@ -1,8 +1,9 @@
-from sqlalchemy import Column, String, Boolean, Text, ForeignKey, Index
+from sqlalchemy import Column, String, Boolean, Text, ForeignKey, Index, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
 from sqlalchemy.orm import relationship
+from datetime import datetime
 
 Base = declarative_base()
 
@@ -11,6 +12,8 @@ class MACVendorTable(Base):
     __tablename__ = 'mac_vendors'
     id = Column(String(8), primary_key=True)
     vendor_name = Column(String(100))
+    last_consulted = Column(DateTime, default=datetime.utcnow)
+    is_rate_limited = Column(Boolean, default=False)
 
 
 class MACProviderTable(Base):

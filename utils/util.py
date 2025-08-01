@@ -79,15 +79,27 @@ def format_separator(mac_address, separator):
 
 
 def format_mac_id(mac_address, position=None, separator=":"):
-    parts = mac_address.split(':')
-    if len(parts) > 1:
-        formatted_mac = f'{separator}'.join(parts[:position] if position is not None else parts)
-        if separator != ":":
-            return format_separator(formatted_mac, separator)
-        else:
-            return formatted_mac
-    else:
+    """
+    Format MAC address according to MacVendors API documentation.
+    Supports multiple input formats: 00:11:22:33:44:55, 00-11-22-33-44-55, 00.11.22.33.44.55, 001122334455
+    Also supports partial MAC addresses (first 6 characters for vendor lookup)
+    """
+    # Normalize the MAC address by removing all separators
+    normalized = re.sub(r'[:\-\.]', '', mac_address.upper())
+    
+    # Validate that it's a valid hex string (even number of characters, 2-12 chars)
+    if not re.match(r'^[0-9A-F]{2,12}$', normalized) or len(normalized) % 2 != 0:
         raise ValueError("This is not a mac address")
+    
+    # Split into 2-character chunks
+    parts = [normalized[i:i+2] for i in range(0, len(normalized), 2)]
+    
+    # Apply position limit if specified
+    if position is not None:
+        parts = parts[:position]
+    
+    # Join with the specified separator
+    return separator.join(parts)
 
 
 def parse_date_utc(value):
@@ -115,11 +127,11 @@ def format_unix_timestamp_to_string(unix_timestamp, format_type='default'):
     return formatted_date
 
 
-def parse_vendor(mac_address, session):
+def parse_vendor(mac_address, session, sequential_id=None):
     # Import here to avoid circular import
     from services.MacVendorFinder import MacVendorFinder
     finder = MacVendorFinder(session)
-    return finder.get_vendor(mac_address)
+    return finder.get_vendor(mac_address, sequential_id)
 
 
 def parse_provider(mac_address, ssid, session):
