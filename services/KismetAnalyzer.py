@@ -19,14 +19,22 @@ from kismetanalyzer.util import does_ssid_matches
 import logging
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Configure logging to write to stderr to avoid interference with tqdm
+import sys
+handler = logging.StreamHandler(sys.stderr)
+handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(handler)
+logger.propagate = False
 
 # Load environment variables from .env file
 load_dotenv('.env')
 
 
 class KismetAnalyzer:
+
     def __init__(self, infile: str, session_factory, log):
         self.infile = infile
         self.devices = []
@@ -165,6 +173,13 @@ class KismetAnalyzer:
         return filtered_sql_result
 
     def load_devices(self, ssid=None, encryption=None, strongest=False):
+        self.__start_time = time.time()
+        filename = os.path.basename(self.infile)
+        
+        # Add clear processing start log
+        logger.info(f"🔍 Starting device analysis for: {filename}")
+        logger.info(f"📊 Loading devices from database...")
+        
         try:
             count_sql = """
                    SELECT COUNT(*)
@@ -239,11 +254,11 @@ class KismetAnalyzer:
 
         devs = []
 
-        # Read the desired number of workers from the .env file
-        desired_workers = int(os.getenv('NUM_WORKERS', 4))
+        # Read the desired number of workers from the .env file - OPTIMIZADO
+        desired_workers = int(os.getenv('NUM_WORKERS', 16))  # AUMENTADO de 4 a 16
 
-        # Determine the maximum number of workers based on CPU count
-        max_workers = min(desired_workers, os.cpu_count())
+        # Determine the maximum number of workers based on CPU count - OPTIMIZADO
+        max_workers = min(desired_workers, os.cpu_count() * 2)  # 2x CPU cores para I/O bound
 
         self.__total_rows = len(sql_result)
 
@@ -254,17 +269,36 @@ class KismetAnalyzer:
         logger.info(f"Records after filtering by location and mac address: {len(sql_result)}")
         self.__log.write_log(f"Records after filtering by location and mac address: {len(sql_result)}")
 
+        # Process devices with ThreadPoolExecutor - OPTIMIZADO
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [
-                executor.submit(self.process_row, row, list_SSID_forbidden, ssid, encryption, strongest,
+            futures = [executor.submit(self.process_row, row, list_SSID_forbidden, ssid, encryption, strongest,
                                 self.__total_rows, index, flip_coord)
                 for index, row in enumerate(sql_result)
             ]
-
-            for future in tqdm(as_completed(futures), total=len(futures), desc="Processing devices", ncols=100):
+            
+            # Clear console and add processing header
+            print("\n" + "-"*50)
+            logger.info(f"⚙️  Starting device processing: {len(sql_result)} devices")
+            logger.info(f"🔧 Using {max_workers} worker threads (OPTIMIZED)")
+            print("-"*50)
+            print("\n" + "🔄 PROCESSING PROGRESS:")
+            print("-" * 40)
+            print()  # Add extra line to separate from progress bar
+            
+            # Process results with progress bar - OPTIMIZADO
+            for future in tqdm(as_completed(futures), total=len(futures),
+                              desc=f"Processing {filename}", ncols=100, position=0,
+                              leave=True, bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]'):
                 result = future.result()
                 if result:
                     devs.append(result)
+            
+            # Clear progress bar area and add completion message
+            print("\n" * 2)  # Clear space after progress bar
+            print("-"*50)
+            logger.info(f"✅ Device processing completed: {len(devs)} devices processed")
+            logger.info(f"📊 Processing efficiency: {len(devs)}/{len(sql_result)} ({len(devs)/len(sql_result)*100:.1f}%)")
+            print("-"*50 + "\n")
 
         self.devices = devs
         return devs

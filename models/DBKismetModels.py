@@ -10,10 +10,20 @@ Base = declarative_base()
 
 class MACVendorTable(Base):
     __tablename__ = 'mac_vendors'
+
     id = Column(String(8), primary_key=True)
     vendor_name = Column(String(100))
-    last_consulted = Column(DateTime, default=datetime.utcnow)
-    is_rate_limited = Column(Boolean, default=False)
+
+
+class MACsNotFoundTable(Base):
+    __tablename__ = 'macs_not_found'
+    
+    id = Column(String(8), primary_key=True)  # MAC ID como llave primaria única
+    last_consulted = Column(DateTime, nullable=False, default=datetime.utcnow)  # Fecha y hora de consulta
+    
+    __table_args__ = (
+        Index('idx_mac_id', 'id'),  # Índice en la llave primaria
+    )
 
 
 class MACProviderTable(Base):

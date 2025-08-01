@@ -58,10 +58,6 @@ class MacProviderFinder:
         # Try to find a provider based on the SSID
         base_provider = self.simple_match_provider_from_ssid(ssid)
         
-        # Only use sentence transformer if enabled and simple match failed
-        if not base_provider and self.__enable_sentence_transformer:
-            base_provider = self.advance_match_provider_from_ssid(ssid)
-        
         if not base_provider:
             base_provider = self.get_provider_by_mac(mac_address)
 
@@ -83,7 +79,7 @@ class MacProviderFinder:
                         else:
                             # If base_provider is a string, we can't create the relationship
                             # Just return the provider name without saving to database
-                            pass
+                            return None
                     except IntegrityError:
                         self.__session.rollback()
                     except Exception as e:
@@ -93,9 +89,6 @@ class MacProviderFinder:
                 # Return provider name, handling both object and string cases
                 if hasattr(base_provider, 'provider_name'):
                     return base_provider.provider_name
-                else:
-                    # If base_provider is already a string, return it directly
-                    return base_provider
         return None
 
     def simple_match_provider_from_ssid(self, ssid):

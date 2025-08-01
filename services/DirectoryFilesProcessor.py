@@ -16,6 +16,7 @@ load_dotenv('.env')
 
 
 class DirectoryFilesProcessor:
+
     def __init__(self, session_factory):
         self.__output_directory = os.getenv("OUT_DIRECTORY", ".")
         self.__Session = session_factory
@@ -30,55 +31,54 @@ class DirectoryFilesProcessor:
         finally:
             session.close()
 
-    def process_file(self, file_path):
-        start_time = time.time()
-        filename = os.path.basename(file_path)
-        log_outfile = os.path.splitext(filename)[0]
+    def process_file(self, file_path: str) -> bool:
+        """
+        Process a single Kismet file
         
-        # Create processing log
-        log = Log(log_directory=self.__output_directory, log_filename=f"{log_outfile}.log",
-                  log_header=f"Kismet Files Processing {log_outfile} Log")
-        
-        # Create diagnostic utility
-        diagnostic = KismetDiagnostic(self.__output_directory, filename)
-        
+        Args:
+            file_path: Path to the Kismet file to process
+            
+        Returns:
+            bool: True if processing was successful, False otherwise
+        """
         try:
             logger.info(f"Processing file {file_path}")
-            
-            # Generate pre-processing diagnostic report
             logger.info("Generating pre-processing diagnostic report...")
+            
+            # Generate pre-processing diagnostic
+            filename = os.path.basename(file_path)
+            diagnostic = KismetDiagnostic(self.__output_directory, filename)
             diagnostic.log_diagnostic_report(file_path)
+            
+            # Create log for KismetAnalyzer
+            log_outfile = os.path.splitext(filename)[0]
+            log = Log(log_directory=self.__output_directory, log_filename=f"{log_outfile}.log",
+                     log_header=f"Kismet Files Processing {log_outfile} Log")
             
             # Process the file
             analyzer = KismetAnalyzer(file_path, self.__Session, log)
             devices = analyzer.load_devices(strongest=True)
             analyzer.export_csv(self.__output_directory)
             
-            # Calculate processing results
-            processing_time = time.time() - start_time
-            devices_processed = len(devices) if devices else 0
-            devices_exported = len(analyzer.devices) if hasattr(analyzer, 'devices') and analyzer.devices else 0
+            # Mark file as processed
+            self.mark_file_processed(filename)
             
+            # Generate post-processing diagnostic
+            logger.info("Generating post-processing diagnostic report...")
             processing_results = {
-                'processed': devices_processed,
-                'exported': devices_exported,
-                'processing_time': processing_time,
+                'processed': len(devices) if devices else 0,
+                'exported': len(analyzer.devices) if hasattr(analyzer, 'devices') and analyzer.devices else 0,
+                'processing_time': analyzer.processing_time if hasattr(analyzer, 'processing_time') else 0,
                 'total_devices': diagnostic.get_summary(file_path)['total_devices'],
                 'wifi_aps': diagnostic.get_summary(file_path)['wifi_aps'],
                 'wifi_aps_with_signal': diagnostic.get_summary(file_path)['wifi_aps_with_signal']
             }
-            
-            # Generate post-processing diagnostic report
-            logger.info("Generating post-processing diagnostic report...")
             diagnostic.log_diagnostic_report(file_path, processing_results)
             
-            # Mark file as processed
-            self.mark_file_processed(filename)
-            
-            # Log clear summary
-            logger.info("=" * 60)
-            logger.info("📊 PROCESSING COMPLETED SUCCESSFULLY")
-            logger.info("=" * 60)
+            # Log completion summary
+            logger.info("="*50)
+            logger.info("📊 FILE PROCESSING COMPLETED SUCCESSFULLY")
+            logger.info("="*50)
             logger.info(f"📁 File: {filename}")
             logger.info(f"📊 Total devices in file: {processing_results['total_devices']:,}")
             logger.info(f"📡 Wi-Fi APs found: {processing_results['wifi_aps']:,}")
@@ -96,16 +96,13 @@ class DirectoryFilesProcessor:
             else:
                 logger.warning(f"⚠️  WARNING: No devices exported (check filtering criteria)")
             
-            logger.info("=" * 60)
+            logger.info("="*50)
             
+            return True
+                
         except Exception as e:
-            self.mark_file_error(filename, str(e))
-            log.write_log_error(f"Error processing {file_path}: {e}")
-            
-            # Generate error diagnostic report
-            diagnostic.log_diagnostic_report(file_path, {'error': str(e)})
-            
-            raise e
+            logger.error(f"Error processing file {file_path}: {e}")
+            return False
 
     def mark_file_processed(self, filename):
         session = self.__Session()
