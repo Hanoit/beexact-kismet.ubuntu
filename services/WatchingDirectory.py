@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import logging
 from utils.file_monitor import FileStabilityMonitor
 from services.FileQueueProcessor import FileQueueProcessor
+import threading
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -16,9 +17,11 @@ load_dotenv('.env')
 
 
 class EventHandler(FileSystemEventHandler):
+
     def __init__(self, processor, stability_time=5):
         self.__processor = processor
-        self.__queue_processor = FileQueueProcessor(processor, max_queue_size=10)
+        # Use configurable queue size from environment (max 30)
+        self.__queue_processor = FileQueueProcessor(processor)
         self.__stability_monitor = FileStabilityMonitor(
             stability_time=stability_time,
             max_wait_time=300,  # 5 minutes max wait
@@ -59,9 +62,8 @@ class EventHandler(FileSystemEventHandler):
                 logger.debug(f"Non-kismet file detected: {filename}")
 
 
-
-
 class WatchingDirectory:
+
     def __init__(self, processor):
         self.__check_interval = int(os.getenv("CHECK_INTERVAL", 300))
         self.__directory = os.getenv("WATCH_DIRECTORY", ".")
@@ -115,11 +117,18 @@ class WatchingDirectory:
     
     def __log_queue_status(self):
         """Log current queue status"""
-        if self.__queue_processor:
-            status = self.__queue_processor.get_queue_status()
-            if status['is_processing'] or status['queue_size'] > 0:
-                logger.info(f"📊 Queue Status: {status['queue_size']} files queued, "
-                           f"processing: {status['current_file'] or 'None'}")
+        status = self.__queue_processor.get_queue_status()
+        queue_size = status['queue_size']
+        current_file = status['current_file']
+        files_moved_back = status['files_moved_back']
+        queue_utilization = status['queue_utilization']
+        
+        if queue_size > 0 or current_file != "None":
+            logger.info(f"📊 Queue Status: {queue_size} files queued ({queue_utilization}), processing: {current_file}")
+            if files_moved_back > 0:
+                logger.info(f"📁 Files moved back to folder: {files_moved_back}")
+        else:
+            logger.info("📊 Queue Status: No files in queue, waiting for new files...")
     
     def get_queue_summary(self) -> str:
         """Get queue processing summary"""

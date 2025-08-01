@@ -4,9 +4,15 @@ File monitoring utilities for detecting when files are completely written
 import os
 import time
 import logging
+import sys
 from typing import Optional
 
+# Configure logging to write to stderr to avoid interference with tqdm
 logger = logging.getLogger(__name__)
+handler = logging.StreamHandler(sys.stderr)
+handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(handler)
+logger.propagate = False
 
 
 class FileStabilityMonitor:
@@ -14,7 +20,7 @@ class FileStabilityMonitor:
     Monitors file stability to detect when a file has finished being written
     """
     
-    def __init__(self, stability_time: int = 5, max_wait_time: int = 300, check_interval: float = 1.0):
+    def __init__(self, stability_time: int=5, max_wait_time: int=300, check_interval: float=1.0):
         """
         Initialize the file stability monitor
         
@@ -103,7 +109,7 @@ class FileStabilityMonitor:
             logger.debug(f"File {file_path} is not accessible: {e}")
             return False
     
-    def wait_for_accessibility(self, file_path: str, timeout: int = 60) -> bool:
+    def wait_for_accessibility(self, file_path: str, timeout: int=60) -> bool:
         """
         Wait for a file to become accessible
         
