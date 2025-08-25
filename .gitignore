@@ -2,9 +2,9 @@
 /_.env
 /build/
 /dist/
+/.cursor/
+/.history/
 /*.csv
 *.kismet
 *.log
 /venv/
-/bee_kismet_ubuntu.zip
-/beexact_kismet_ubuntu.7z

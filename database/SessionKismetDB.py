@@ -30,7 +30,9 @@ def get_session():
         if not os.path.exists(current_dir):
             raise FileNotFoundError(f"The Database directory '{current_dir}' does not exist.")
 
-        db_path = os.path.join(current_dir, "kismet.db")
+        # Usar DB_PATH del .env para flexibilidad
+        db_filename = os.getenv("DB_PATH", "kismet.db")
+        db_path = os.path.join(current_dir, db_filename)
 
         if not os.path.exists(db_path):
             raise FileNotFoundError(f"The Database '{db_path}' does not exist.")
