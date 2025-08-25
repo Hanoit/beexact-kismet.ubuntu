@@ -1,3 +1,4 @@
+import os
 from kismetanalyzer import model, util
 from kismetanalyzer.util import parse_networkname, parse_mac, parse_frequency, parse_channel, parse_manufacturer, \
     parse_type, parse_name, parse_commonname, parse_phyname, parse_encryption, parse_loc
@@ -51,7 +52,7 @@ class ExtDeviceModel(model.Device):
         return self.__encryption
 
     @encryption.setter
-    def encryption(self, value: str = ""):
+    def encryption(self, value: str=""):
         self.__encryption = value
 
     @property
@@ -60,7 +61,7 @@ class ExtDeviceModel(model.Device):
         return self.__vendor
 
     @vendor.setter
-    def vendor(self, value: str = ""):
+    def vendor(self, value: str=""):
         self.__vendor = value
 
     @property
@@ -69,7 +70,7 @@ class ExtDeviceModel(model.Device):
         return self.__provider
 
     @provider.setter
-    def provider(self, value: str = ""):
+    def provider(self, value: str=""):
         self.__provider = value
 
     @property
@@ -78,7 +79,7 @@ class ExtDeviceModel(model.Device):
         return self.__accuracy_mt
 
     @accuracy_mt.setter
-    def accuracy_mt(self, value: float = 0.0):
+    def accuracy_mt(self, value: float=0.0):
         self.__accuracy_mt = value
 
     @property
@@ -87,7 +88,7 @@ class ExtDeviceModel(model.Device):
         return self.__ssid
 
     @ssid.setter
-    def ssid(self, value: str = ""):
+    def ssid(self, value: str=""):
         self.__ssid = value
 
     @property
@@ -95,7 +96,7 @@ class ExtDeviceModel(model.Device):
         """Get the sequential ID for tracking."""
         return self.__sequential_id
 
-    def from_json(self, dev: dict, flip_coord: bool = False, strongest: bool = False):
+    def from_json(self, dev: dict, flip_coord: bool=False, strongest: bool=False):
         """
         Create an ExtDeviceModel instance from JSON data.
 
@@ -125,10 +126,37 @@ class ExtDeviceModel(model.Device):
         self.vendor = util.parse_vendor(self.mac, self.__session, self.__sequential_id)
         self.provider = util.parse_provider(self.mac, self.ssid, self.__session)
 
-        # Check if we should process devices without location
-        from dotenv import load_dotenv
-        import os
-        load_dotenv('.env')
+    def from_json_no_vendor(self, dev: dict, flip_coord: bool=False, strongest: bool=False):
+        """
+        Create an ExtDeviceModel instance from JSON data WITHOUT vendor lookup (for batch processing)
+        
+        :param dev: JSON data representing the device.
+        :param flip_coord: Whether to need flipping lat and log coordinates.
+        :param strongest: Whether to use the strongest signal.
+        :return: An instance of ExtDeviceModel.
+        """
+        
+        lon, lat, alt = parse_loc(dev, strongest)
+        if not flip_coord:
+            loc = model.Location(lon, lat, alt)
+        else:
+            loc = model.Location(lat, lon, alt)
+
+        self.location = loc
+        self.ssid = parse_networkname(dev)
+        self.mac = parse_mac(dev)
+        self.frequency = parse_frequency(dev)
+        self.channel = parse_channel(dev)
+        self.manufacturer = parse_manufacturer(dev)
+        self.type = parse_type(dev)
+        self.name = parse_name(dev)
+        self.commonname = parse_commonname(dev)
+        self.phyname = parse_phyname(dev)
+        self.encryption = parse_encryption(dev)
+        
+        # NO llamar vendor/provider - se harán en batch después
+        self.vendor = None  # Se asignará después en batch
+        self.provider = util.parse_provider(self.mac, self.ssid, self.__session)
         process_without_location = bool(int(os.getenv('PROCESS_WITHOUT_LOCATION', 1)))
         
         if self.location.lon != "0" and self.location.lat != "0":

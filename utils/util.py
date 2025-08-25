@@ -92,7 +92,7 @@ def format_mac_id(mac_address, position=None, separator=":"):
         raise ValueError("This is not a mac address")
     
     # Split into 2-character chunks
-    parts = [normalized[i:i+2] for i in range(0, len(normalized), 2)]
+    parts = [normalized[i:i + 2] for i in range(0, len(normalized), 2)]
     
     # Apply position limit if specified
     if position is not None:
@@ -132,6 +132,24 @@ def parse_vendor(mac_address, session, sequential_id=None):
     from services.MacVendorFinder import MacVendorFinder
     finder = MacVendorFinder(session)
     return finder.get_vendor(mac_address, sequential_id)
+
+
+# NUEVA FUNCIÓN OPTIMIZADA PARA BATCH PROCESSING
+def parse_vendors_batch(mac_addresses, session, sequential_ids=None):
+    """
+    Parse multiple MAC addresses in batch for better performance
+    
+    Args:
+        mac_addresses: List of MAC addresses to process
+        session: Database session
+        sequential_ids: Optional list of sequential IDs for tracking
+    
+    Returns:
+        Dict with MAC addresses as keys and vendor names as values
+    """
+    from services.MacVendorFinder import MacVendorFinder
+    finder = MacVendorFinder(session)
+    return finder.process_mac_batch(mac_addresses, sequential_ids)
 
 
 def parse_provider(mac_address, ssid, session):
@@ -201,5 +219,4 @@ def export_tableDB_to_csv(session_factory, table_class, output_file, delimiter='
         raise e
     finally:
         session.close()
-
 

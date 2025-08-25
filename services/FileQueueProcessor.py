@@ -7,12 +7,20 @@ import time
 import threading
 import queue
 import shutil
+import psutil
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 import logging
+from datetime import datetime, timedelta
 
 # Load environment variables
 load_dotenv()
+
+# CONFIGURACIÓN ADAPTIVA DESDE .ENV - OPTIMIZADA
+CHECK_INTERVAL = float(os.getenv('CHECK_INTERVAL', '300'))
+ENABLE_PERFORMANCE_MONITOR = os.getenv('ENABLE_PERFORMANCE_MONITOR', 'false').lower() == 'true'
+ENABLE_PROGRESS_BAR = os.getenv('ENABLE_PROGRESS_BAR', '1') == '1'
+SAVE_INTERMEDIATE_RESULTS = os.getenv('SAVE_INTERMEDIATE_RESULTS', '1') == '1'
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -57,10 +65,25 @@ class FileQueueProcessor:
             'total_processed': 0,
             'total_errors': 0,
             'current_queue_size': 0,
-            'files_moved_back': 0
+            'files_moved_back': 0,
+            'start_time': time.time(),
+            'total_processing_time': 0.0,
+            'average_processing_time': 0.0,
+            'fastest_file_time': float('inf'),
+            'slowest_file_time': 0.0,
+            'fastest_file': '',
+            'slowest_file': '',
+            'throughput_files_per_hour': 0.0
         }
         self.__start_worker()
-        logger.info(f"FileQueueProcessor initialized with max queue size: {max_queue_size}")
+        
+        # Log configuración adaptiva
+        logger.info("FileQueueProcessor Configuration - ADAPTIVA Y OPTIMIZADA:")
+        logger.info(f"  - Max Queue Size: {max_queue_size}")
+        logger.info(f"  - Check Interval: {CHECK_INTERVAL:.0f}s")
+        logger.info(f"  - Performance Monitor: {'Enabled' if ENABLE_PERFORMANCE_MONITOR else 'Disabled'}")
+        logger.info(f"  - Progress Bar: {'Enabled' if ENABLE_PROGRESS_BAR else 'Disabled'}")
+        logger.info(f"  - Save Intermediate: {'Enabled' if SAVE_INTERMEDIATE_RESULTS else 'Disabled'}")
         
         if max_queue_size == 30:
             logger.info("⚠️  Queue is at maximum capacity (30 files). Excess files will be moved back to folder.")
@@ -74,6 +97,36 @@ class FileQueueProcessor:
         )
         self.__worker_thread.start()
         logger.info("File queue worker thread started")
+    
+    def __update_processing_stats(self, filename: str, processing_time: float, success: bool):
+        """Actualizar estadísticas avanzadas de procesamiento"""
+        if success:
+            self.__processing_stats['total_processed'] += 1
+        else:
+            self.__processing_stats['total_errors'] += 1
+        
+        # Actualizar tiempos
+        self.__processing_stats['total_processing_time'] += processing_time
+        
+        # Calcular tiempo promedio
+        total_files = self.__processing_stats['total_processed'] + self.__processing_stats['total_errors']
+        if total_files > 0:
+            self.__processing_stats['average_processing_time'] = self.__processing_stats['total_processing_time'] / total_files
+        
+        # Actualizar archivo más rápido
+        if processing_time < self.__processing_stats['fastest_file_time']:
+            self.__processing_stats['fastest_file_time'] = processing_time
+            self.__processing_stats['fastest_file'] = filename
+        
+        # Actualizar archivo más lento
+        if processing_time > self.__processing_stats['slowest_file_time']:
+            self.__processing_stats['slowest_file_time'] = processing_time
+            self.__processing_stats['slowest_file'] = filename
+        
+        # Calcular throughput (archivos por hora)
+        elapsed_time = time.time() - self.__processing_stats['start_time']
+        if elapsed_time > 0:
+            self.__processing_stats['throughput_files_per_hour'] = (total_files / elapsed_time) * 3600
     
     def __move_file_back_to_folder(self, file_path: str) -> bool:
         """
@@ -211,14 +264,28 @@ class FileQueueProcessor:
                 # Clear console for clean progress display
                 print("\n" * 2)  # Add extra space
                 
-                # Process the file
+                # Process the file with advanced statistics
                 start_time = time.time()
+                
+                # Log performance monitoring si está habilitado
+                if ENABLE_PERFORMANCE_MONITOR:
+                    cpu_before = psutil.cpu_percent()
+                    memory_before = psutil.virtual_memory().percent
+                    logger.info(f"📊 System before processing - CPU: {cpu_before:.1f}% | Memory: {memory_before:.1f}%")
+                
                 try:
                     # Process the file - this will handle all internal logging
                     self.__processor.process_file(file_path)
                     processing_time = time.time() - start_time
                     
-                    self.__processing_stats['total_processed'] += 1
+                    # Actualizar estadísticas avanzadas
+                    self.__update_processing_stats(filename, processing_time, success=True)
+                    
+                    # Log performance después si está habilitado
+                    if ENABLE_PERFORMANCE_MONITOR:
+                        cpu_after = psutil.cpu_percent()
+                        memory_after = psutil.virtual_memory().percent
+                        logger.info(f"📊 System after processing - CPU: {cpu_after:.1f}% | Memory: {memory_after:.1f}%")
                     
                     # Clear any remaining progress output
                     print("\n" * 2)
@@ -235,7 +302,7 @@ class FileQueueProcessor:
                     
                 except Exception as e:
                     processing_time = time.time() - start_time
-                    self.__processing_stats['total_errors'] += 1
+                    self.__update_processing_stats(filename, processing_time, success=False)
                     
                     # Clear any remaining progress output
                     print("\n" * 2)
@@ -303,8 +370,8 @@ class FileQueueProcessor:
         logger.info("Stopping file queue processor...")
         self.__stop_event.set()
         
-        if self.__processing_thread and self.__processing_thread.is_alive():
-            self.__processing_thread.join(timeout=5.0)
+        if self.__worker_thread and self.__worker_thread.is_alive():
+            self.__worker_thread.join(timeout=5.0)
         
         logger.info("File queue processor stopped")
     
@@ -318,14 +385,27 @@ class FileQueueProcessor:
         stats = self.__processing_stats
         queue_status = self.get_queue_status()
         
+        # Calcular tiempo total de funcionamiento
+        elapsed_time = time.time() - stats['start_time']
+        elapsed_str = str(timedelta(seconds=int(elapsed_time)))
+        
+        # Formatear tiempos de archivos más rápido/lento
+        fastest_time = stats['fastest_file_time'] if stats['fastest_file_time'] != float('inf') else 0
+        
         summary = f"""
-📊 FILE QUEUE PROCESSING SUMMARY
-{'='*50}
+📊 FILE QUEUE PROCESSING SUMMARY - ADAPTIVA Y OPTIMIZADA
+{'='*60}
 📁 Files Processed: {stats['total_processed']}
 ❌ Processing Errors: {stats['total_errors']}
-📋 Current Queue Size: {queue_status['queue_size']}/{queue_status['max_queue_size']} ({queue_status['queue_utilization']})
+📋 Current Queue: {queue_status['queue_size']}/{queue_status['max_queue_size']} ({queue_status['queue_utilization']})
 📁 Files Moved Back: {stats['files_moved_back']}
 ⚙️  Currently Processing: {queue_status['current_file']}
-{'='*50}
+⏰ Total Runtime: {elapsed_str}
+⏱️  Total Processing Time: {stats['total_processing_time']:.1f}s
+📊 Average Time per File: {stats['average_processing_time']:.1f}s
+⚡ Fastest File: {stats['fastest_file']} ({fastest_time:.1f}s)
+🐌 Slowest File: {stats['slowest_file']} ({stats['slowest_file_time']:.1f}s)
+🚀 Throughput: {stats['throughput_files_per_hour']:.1f} files/hour
+{'='*60}
 """
         return summary 

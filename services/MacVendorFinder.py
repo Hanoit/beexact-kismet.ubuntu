@@ -3,7 +3,7 @@ import threading
 import time
 import requests
 from datetime import datetime, timedelta
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from models.DBKismetModels import MACVendorTable, MACsNotFoundTable
 from utils import util
 from repository.RepositoryImpl import RepositoryImpl
@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 import logging
 import concurrent.futures
 from collections import defaultdict
+import random
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -19,11 +20,23 @@ logger = logging.getLogger(__name__)
 # Load environment variables from .env file
 load_dotenv('.env')
 
-# Rate limiting and retry configuration - OPTIMIZADO PARA PERFORMANCE
-MIN_API_INTERVAL = float(os.getenv('MACVENDOR_API_INTERVAL', '0.05'))  # 50ms por defecto (AGRESIVO)
-MACVENDOR_API_TIMEOUT = float(os.getenv('MACVENDOR_API_TIMEOUT', '5.0'))  # 5s timeout (OPTIMIZADO)
-# MACs Not Found cache configuration
-MACS_NOT_FOUND_CACHE_MONTHS = int(os.getenv('MACS_NOT_FOUND_CACHE_MONTHS', '6'))  # 6 meses por defecto
+# CONFIGURACIÓN ADAPTIVA DESDE .ENV - OPTIMIZADA PARA PERFORMANCE
+# Configuración de plan de MacVendors
+PLAN_TYPE = os.getenv('MACVENDOR_PLAN_TYPE', 'free').lower()
+REQUESTS_PER_SECOND = int(os.getenv('MACVENDOR_REQUESTS_PER_SECOND', '1' if PLAN_TYPE == 'free' else '25'))
+REQUESTS_PER_DAY = int(os.getenv('MACVENDOR_REQUESTS_PER_DAY', '1000' if PLAN_TYPE == 'free' else '100000'))
+
+# Rate limiting adaptativo basado en plan
+MIN_API_INTERVAL = 1.0 / REQUESTS_PER_SECOND if REQUESTS_PER_SECOND > 0 else float(os.getenv('MACVENDOR_API_INTERVAL', '1.0'))
+MACVENDOR_API_TIMEOUT = float(os.getenv('MACVENDOR_API_TIMEOUT', '8.0'))
+
+# Configuración de cache optimizada
+MACS_NOT_FOUND_CACHE_MONTHS = int(os.getenv('MACS_NOT_FOUND_CACHE_MONTHS', '6'))
+
+# Configuración de batch processing
+BATCH_SIZE = int(os.getenv('MACVENDOR_BATCH_SIZE', '25'))
+MAX_WORKERS = int(os.getenv('MACVENDOR_MAX_WORKERS', '25'))
+BATCH_TIMEOUT = float(os.getenv('MACVENDOR_BATCH_TIMEOUT', '35.0'))
 
 # Global variables for rate limiting and retry - OPTIMIZADOS
 current_api_interval = MIN_API_INTERVAL
@@ -37,10 +50,43 @@ logger = logging.getLogger(__name__)
 
 # Log configuration
 VERBOSE_ADVANCE = bool(int(os.getenv('ADVANCE_VERBOSE', '0')))
-logger.info("MacVendor API Configuration - PERFORMANCE OPTIMIZED:")
-logger.info(f"  - Initial API Interval: {MIN_API_INTERVAL}s between calls (AGGRESSIVE)")
-logger.info(f"  - API Timeout: {MACVENDOR_API_TIMEOUT}s (OPTIMIZED)")
-logger.info(f"  - MACs Not Found Cache: {MACS_NOT_FOUND_CACHE_MONTHS} months")
+
+# Database retry configuration
+DB_RETRY_ATTEMPTS = int(os.getenv('DB_RETRY_ATTEMPTS', '3'))
+DB_RETRY_DELAY = float(os.getenv('DB_RETRY_DELAY', '0.1'))  # 100ms base delay
+
+
+def retry_db_operation(operation_func, max_attempts=DB_RETRY_ATTEMPTS, base_delay=DB_RETRY_DELAY):
+    """
+    Ejecuta una operación de base de datos con reintentos en caso de bloqueo
+    """
+    for attempt in range(max_attempts):
+        try:
+            return operation_func()
+        except OperationalError as e:
+            if "database is locked" in str(e).lower() and attempt < max_attempts - 1:
+                # Esperar con backoff exponencial + jitter
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 0.05)
+                time.sleep(delay)
+                logger.debug(f"Database locked, retrying in {delay:.3f}s (attempt {attempt + 1}/{max_attempts})")
+                continue
+            else:
+                raise e
+        except Exception as e:
+            raise e
+    
+    raise OperationalError("Database operation failed after all retry attempts", None, None)
+
+
+logger.info("MacVendor API Configuration - ADAPTIVA Y OPTIMIZADA:")
+logger.info(f"  - Plan Type: {PLAN_TYPE.upper()}")
+logger.info(f"  - Requests per second: {REQUESTS_PER_SECOND}")
+logger.info(f"  - Requests per day: {REQUESTS_PER_DAY}")
+logger.info(f"  - API Interval: {MIN_API_INTERVAL:.3f}s ({1/MIN_API_INTERVAL:.1f} RPS)")
+logger.info(f"  - API Timeout: {MACVENDOR_API_TIMEOUT}s")
+logger.info(f"  - Batch Size: {BATCH_SIZE}")
+logger.info(f"  - Max Workers: {MAX_WORKERS}")
+logger.info(f"  - MACs Cache: {MACS_NOT_FOUND_CACHE_MONTHS} months")
 
 
 def increase_rate_limit():
@@ -81,14 +127,19 @@ def fetch_vendor_from_api(mac_id, sequential_id):
         headers = {}
 
     try:
-        # 🔒 LOCK OPTIMIZADO para controlar acceso a la API
-        with api_call_lock:
-            # Esperar el intervalo mínimo DENTRO del lock (OPTIMIZADO)
-            if current_api_interval > 0:
-                time.sleep(current_api_interval)
-            
-            # Hacer la llamada a la API con timeout optimizado
-            response = requests.get(url, headers=headers, timeout=MACVENDOR_API_TIMEOUT)
+        # 🚀 RATE LIMITING PARALELO - Sin lock para aprovechar 25 RPS
+        # Solo esperar si es necesario (sin bloquear otros threads)
+        if current_api_interval > 0:
+            time.sleep(current_api_interval)
+        
+        # Hacer la llamada a la API con timeout optimizado y configuración robusta
+        response = requests.get(
+            url,
+            headers={**headers, 'Connection': 'close'},  # Evitar conexiones persistentes
+            timeout=(MACVENDOR_API_TIMEOUT / 2, MACVENDOR_API_TIMEOUT),  # (connect, read)
+            allow_redirects=False,  # Evitar redirecciones que puedan colgar
+            stream=False  # No usar streaming
+        )
         
         if response.ok:
             if api_token:
@@ -150,26 +201,51 @@ class MacVendorFinder:
             batch_macs = mac_addresses[i:i + BATCH_SIZE]
             batch_ids = sequential_ids[i:i + BATCH_SIZE] if sequential_ids else [None] * len(batch_macs)
             
-            # Procesar batch en paralelo
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(batch_macs), 10)) as executor:
+            # Procesar batch en paralelo con configuración adaptiva
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(batch_macs), MAX_WORKERS)) as executor:
                 future_to_mac = {
                     executor.submit(self.get_vendor, mac, seq_id): mac 
                     for mac, seq_id in zip(batch_macs, batch_ids)
                 }
                 
-                for future in concurrent.futures.as_completed(future_to_mac, timeout=BATCH_TIMEOUT):
-                    mac = future_to_mac[future]
-                    try:
-                        vendor = future.result()
-                        results[mac] = vendor
-                    except Exception as e:
-                        logger.error(f"Error processing MAC {mac}: {e}")
-                        results[mac] = None
+                # Manejo robusto de timeouts y futures pendientes
+                completed_count = 0
+                try:
+                    for future in concurrent.futures.as_completed(future_to_mac, timeout=BATCH_TIMEOUT):
+                        mac = future_to_mac[future]
+                        try:
+                            vendor = future.result()
+                            results[mac] = vendor
+                            completed_count += 1
+                        except Exception as e:
+                            logger.error(f"Error processing MAC {mac}: {e}")
+                            results[mac] = None
+                            completed_count += 1
+                            
+                except concurrent.futures.TimeoutError:
+                    # Manejar futures que no completaron en el timeout
+                    unfinished_count = len(future_to_mac) - completed_count
+                    if unfinished_count > 0:
+                        unfinished_macs = []
+                        logger.error(f"Error in batch vendor lookup: {unfinished_count} (of {len(future_to_mac)}) futures unfinished after {BATCH_TIMEOUT}s timeout")
+                        
+                        # Cancelar futures pendientes y asignar None
+                        for future, mac in future_to_mac.items():
+                            if not future.done():
+                                unfinished_macs.append(mac)
+                                future.cancel()
+                                results[mac] = None
+                        
+                        # Log detallado para diagnóstico
+                        if VERBOSE_ADVANCE:
+                            logger.warning(f"Unfinished MACs: {unfinished_macs[:3]}{'...' if len(unfinished_macs) > 3 else ''}")
+                            logger.info(f"Batch config: size={len(batch_macs)}, workers={min(len(batch_macs), MAX_WORKERS)}, timeout={BATCH_TIMEOUT}s, api_timeout={MACVENDOR_API_TIMEOUT}s")
         
         return results
 
     def get_vendor(self, mac_address, sequential_id):
         mac_id = util.format_mac_id(mac_address, position=3, separator="-")
+        # Usar la sesión existente por ahora para evitar complejidad adicional  
         vendor_repository = RepositoryImpl(MACVendorTable, self.__session)
         not_found_repository = RepositoryImpl(MACsNotFoundTable, self.__session)
 
@@ -200,13 +276,20 @@ class MacVendorFinder:
                 if VERBOSE_ADVANCE:
                     seq_info = f" [{sequential_id}]" if sequential_id else ""
                     logger.info(f"MAC {mac_id}{seq_info} NOT_FOUND cache expired, removing and retrying API")
-                with db_lock:
-                    try:
-                        not_found_repository.delete_by_id(mac_id)
-                        self.__session.commit()
-                    except Exception as e:
-                        self.__session.rollback()
-                        logger.error(f"Error removing expired NOT_FOUND record for MAC {mac_id}: {e}")
+                
+                def remove_expired():
+                    with db_lock:
+                        try:
+                            not_found_repository.delete_by_id(mac_id)
+                            self.__session.commit()
+                        except Exception as e:
+                            self.__session.rollback()
+                            raise e
+                
+                try:
+                    retry_db_operation(remove_expired)
+                except Exception as e:
+                    logger.error(f"Error removing expired NOT_FOUND record for MAC {mac_id}: {e}")
 
         # 3. Si no está en cache o expiró, consultar API
         try:
@@ -215,54 +298,69 @@ class MacVendorFinder:
             logger.error(f"MacVendor Api does not work: \n {e}")
             return None
 
-        if vendor_name == "NOT_FOUND":
+        if vendor_name == "NOT_FOUND" or "Unknown":
             # MAC no encontrada - guardar o actualizar en tabla NOT_FOUND
-            with db_lock:
-                try:
-                    if not_found_record:
-                        # Actualizar fecha de consulta
-                        not_found_record.last_consulted = datetime.utcnow()
-                        self.__session.commit()
-                        if VERBOSE_ADVANCE:
-                            seq_info = f" [{sequential_id}]" if sequential_id else ""
-                            logger.info(f"Updated NOT_FOUND cache date for MAC {mac_id}{seq_info}")
-                    else:
-                        # Crear nuevo registro
-                        new_not_found = MACsNotFoundTable(id=mac_id, last_consulted=datetime.utcnow())
-                        self.__session.add(new_not_found)
-                        self.__session.commit()
-                        if VERBOSE_ADVANCE:
-                            seq_info = f" [{sequential_id}]" if sequential_id else ""
-                            logger.info(f"Added MAC {mac_id}{seq_info} to NOT_FOUND cache")
-                except IntegrityError:
-                    self.__session.rollback()
-                    # Si hay conflicto de integridad, intentar actualizar
+            def save_not_found():
+                with db_lock:
                     try:
-                        existing_record = not_found_repository.search_by_id(mac_id)
-                        if existing_record:
-                            existing_record.last_consulted = datetime.utcnow()
+                        if not_found_record:
+                            # Actualizar fecha de consulta del registro existente
+                            not_found_record.last_consulted = datetime.utcnow()
+                            self.__session.merge(not_found_record)  # merge en lugar de commit directo
                             self.__session.commit()
+                            if VERBOSE_ADVANCE:
+                                seq_info = f" [{sequential_id}]" if sequential_id else ""
+                                logger.info(f"Updated NOT_FOUND cache date for MAC {mac_id}{seq_info}")
+                        else:
+                            # Verificar si ya existe antes de crear (thread-safe)
+                            existing = not_found_repository.search_by_id(mac_id)
+                            if not existing:
+                                new_not_found = MACsNotFoundTable(id=mac_id, last_consulted=datetime.utcnow())
+                                self.__session.merge(new_not_found)  # merge para evitar conflictos
+                                self.__session.commit()
+                                if VERBOSE_ADVANCE:
+                                    seq_info = f" [{sequential_id}]" if sequential_id else ""
+                                    logger.info(f"Added MAC {mac_id}{seq_info} to NOT_FOUND cache")
+                    except IntegrityError:
+                        self.__session.rollback()
+                        # Conflicto de integridad - otro thread ya creó el registro
+                        if VERBOSE_ADVANCE:
+                            logger.debug(f"MAC {mac_id} already exists in NOT_FOUND cache (created by another thread)")
                     except Exception as e:
                         self.__session.rollback()
-                        logger.error(f"Error updating NOT_FOUND record for MAC {mac_id}: {e}")
-                except Exception as e:
-                    self.__session.rollback()
-                    logger.error(f"Error saving NOT_FOUND record for MAC {mac_id}: {e}")
+                        raise e
+            
+            try:
+                retry_db_operation(save_not_found)
+            except Exception as e:
+                logger.error(f"Error saving NOT_FOUND record for MAC {mac_id}: {e}")
             
             return None
         elif vendor_name:
+
             # Vendor encontrado - guardar en tabla de vendors
-            with db_lock:
-                try:
-                    new_vendor = MACVendorTable(id=mac_id, vendor_name=vendor_name)
-                    self.__session.add(new_vendor)
-                    self.__session.commit()
-                    return vendor_name
-                except IntegrityError:
-                    self.__session.rollback()
-                    return vendor_name
-                except Exception as e:
-                    self.__session.rollback()  # Rollback on general exceptions
-                    raise e
+            def save_vendor():
+                with db_lock:
+                    try:
+                        # Verificar si ya existe antes de crear
+                        existing_vendor = vendor_repository.search_by_id(mac_id)
+                        if not existing_vendor:
+                            new_vendor = MACVendorTable(id=mac_id, vendor_name=vendor_name)
+                            self.__session.merge(new_vendor)  # merge para evitar conflictos
+                            self.__session.commit()
+                    except IntegrityError:
+                        self.__session.rollback()
+                        # Otro thread ya creó el vendor
+                        pass
+                    except Exception as e:
+                        self.__session.rollback()
+                        raise e
+            
+            try:
+                retry_db_operation(save_vendor)
+            except Exception as e:
+                logger.error(f"Error saving vendor for MAC {mac_id}: {e}")
+            
+            return vendor_name  # Retornar el vendor aunque no se pudo guardar
         
         return None

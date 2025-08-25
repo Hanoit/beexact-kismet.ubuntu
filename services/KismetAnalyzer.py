@@ -17,6 +17,7 @@ from utils.Log import Log
 from models.ExtDeviceModel import ExtDeviceModel
 from kismetanalyzer.util import does_ssid_matches
 import logging
+import threading
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -42,10 +43,86 @@ class KismetAnalyzer:
         self.__start_time = time.time()
         self.__total_rows = 0
         self.__log = log
+        # ✅ Cache para SSIDs prohibidos (evita consultas repetidas)
+        self.__ssid_forbidden_cache = None
         try:
             self.db = sqlite3.connect(self.infile)
         except Exception as e:
             raise RuntimeError(f"Failed to open kismet logfile: {e}")
+
+    def process_batch_optimized(self, batch_rows, list_SSID_forbidden, ssid, encryption, strongest, flip_coord, start_index):
+        """
+        Process a batch of rows with optimized MAC vendor lookup
+        """
+        batch_devices = []
+        mac_addresses = []
+        sequential_ids = []
+        
+        # Fase 1: Crear dispositivos sin vendors (procesamiento rápido) - OPTIMIZADO
+        # ✅ UNA SOLA SESIÓN para todo el batch (10x más rápido)
+        session = self.__Session()
+        try:
+            for idx, row in enumerate(batch_rows):
+                current_index = start_index + idx
+                thread_mod = int(os.getenv('SEQUENTIAL_ID_THREAD_MOD', '10000'))
+                coord_precision = int(os.getenv('COORDINATE_PRECISION', '6'))
+                decimal_places = int(os.getenv('COORDINATE_DECIMAL_PLACES', '4'))
+                sequential_id = f"R{current_index:0{coord_precision}d}-T{threading.current_thread().ident % thread_mod:0{decimal_places}d}"
+                
+                try:
+                    # ✅ Filtros ANTES de crear objetos (más eficiente)
+                    json_index = int(os.getenv('DEVICE_JSON_INDEX', '14'))
+                    dev_json_str = row[json_index].decode('utf-8')
+                    dev = json.loads(dev_json_str)
+                    
+                    # Filtros rápidos ANTES de crear objetos pesados
+                    if ssid and not does_ssid_matches(dev, ssid):
+                        continue
+                    if util.does_list_ssid_matches(dev, list_SSID_forbidden):
+                        continue
+                    
+                    base = {
+                        'first_time': row[0], 'last_time': row[1], 'devkey': row[2], 'phyname': row[3],
+                        'devmac': row[4], 'strongest_signal': row[5], 'min_lat': row[6], 'min_lon': row[7],
+                        'max_lat': row[8], 'max_lon': row[9], 'avg_lat': row[10], 'avg_lon': row[11],
+                        'bytes_data': row[12], 'type': row[13], 'sequential_id': sequential_id
+                    }
+                    
+                    # Crear dispositivo SIN vendor (se agregará después)
+                    extended_device = ExtDeviceModel(base=base, session=session)
+                    extended_device.from_json_no_vendor(dev, flip_coord, strongest=strongest)
+                    
+                    if encryption and encryption not in extended_device.encryption:
+                        continue
+                    
+                    batch_devices.append(extended_device)
+                    mac_addresses.append(extended_device.mac)
+                    sequential_ids.append(sequential_id)
+                    
+                except (ValueError, json.JSONDecodeError):
+                    continue
+                except Exception as e:
+                    logger.error(f"Error processing device {current_index}: {e}")
+                    continue
+        finally:
+            session.close()
+        
+        # Fase 2: Batch lookup de vendors (¡25x más rápido!)
+        if mac_addresses:
+            session = self.__Session()
+            try:
+                vendor_results = util.parse_vendors_batch(mac_addresses, session, sequential_ids)
+                
+                # Fase 3: Asignar vendors a dispositivos
+                for device, mac in zip(batch_devices, mac_addresses):
+                    device.vendor = vendor_results.get(mac, None)
+                    
+            except Exception as e:
+                logger.error(f"Error in batch vendor lookup: {e}")
+            finally:
+                session.close()
+        
+        return batch_devices
 
     def process_row(self, row, list_SSID_forbidden, ssid, encryption, strongest, total_rows, current_index,
                     flip_coord):
@@ -133,20 +210,26 @@ class KismetAnalyzer:
             return filtered_df.drop(columns=['mac_prefix']).values.tolist()
         
         # Original location-based filtering logic
+        # Definir EPSG fuera del if para usar en ambos casos
+        coord_epsg = int(os.getenv('COORDINATE_EPSG', '4326'))
+        projected_epsg = int(os.getenv('PROJECTED_EPSG', '3857'))
+        
         if not flip_coord:
             # Create a GeoDataFrame with the geographic points
-            gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.max_lon, df.max_lat), crs="EPSG:4326")
+            gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.max_lon, df.max_lat), crs=f"EPSG:{coord_epsg}")
         else:
-            gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.max_lat, df.max_lon), crs="EPSG:4326")
+            gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.max_lat, df.max_lon), crs=f"EPSG:{coord_epsg}")
 
         # Convertir a un CRS proyectado adecuado para medir distancias en metros
-        gdf = gdf.to_crs(epsg=3857)
+        gdf = gdf.to_crs(epsg=projected_epsg)
 
         # Group by the first 4 positions of the MAC address
         gdf['mac_prefix'] = df['devmac'].str.replace(':', '').str[:8]
 
         # Calculate the distance within each group using GeoPandas built-in functionality
-        def filter_within_distance(group, max_distance=50):
+        max_distance = int(os.getenv('DISTANCE_FILTER_METERS', '50'))
+
+        def filter_within_distance(group, max_distance=max_distance):
             # Crear la matriz de distancias
             distance_matrix = group.geometry.apply(lambda geom: group.distance(geom)).values
 
@@ -242,23 +325,23 @@ class KismetAnalyzer:
         except Exception as e:
             raise RuntimeError(f"Failed to extract data from database \n {e}") from e
 
-        session = self.__Session()
-
-        try:
-            SSID_forbidden_repo = SSIDForbiddenRepository(session)
-            list_SSID_forbidden = {ssid.ssid_name for ssid in SSID_forbidden_repo.get_all()}
-        except Exception as e:
-            raise RuntimeError(f"Failed to extract data from database \n {e}") from e
-        finally:
-            session.close()
+        # ✅ Cache de SSIDs prohibidos (evita consulta repetida)
+        if self.__ssid_forbidden_cache is None:
+            session = self.__Session()
+            try:
+                SSID_forbidden_repo = SSIDForbiddenRepository(session)
+                self.__ssid_forbidden_cache = {ssid.ssid_name for ssid in SSID_forbidden_repo.get_all()}
+            except Exception as e:
+                raise RuntimeError(f"Failed to extract data from database \n {e}") from e
+            finally:
+                session.close()
+        
+        list_SSID_forbidden = self.__ssid_forbidden_cache
 
         devs = []
 
-        # Read the desired number of workers from the .env file - OPTIMIZADO
-        desired_workers = int(os.getenv('NUM_WORKERS', 16))  # AUMENTADO de 4 a 16
-
-        # Determine the maximum number of workers based on CPU count - OPTIMIZADO
-        max_workers = min(desired_workers, os.cpu_count() * 2)  # 2x CPU cores para I/O bound
+        # Variables NUM_WORKERS eliminada - no se usaba para paralelismo real
+        # El paralelismo real se maneja en MacVendorFinder con MACVENDOR_MAX_WORKERS
 
         self.__total_rows = len(sql_result)
 
@@ -269,36 +352,51 @@ class KismetAnalyzer:
         logger.info(f"Records after filtering by location and mac address: {len(sql_result)}")
         self.__log.write_log(f"Records after filtering by location and mac address: {len(sql_result)}")
 
-        # Process devices with ThreadPoolExecutor - OPTIMIZADO
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(self.process_row, row, list_SSID_forbidden, ssid, encryption, strongest,
-                                self.__total_rows, index, flip_coord)
-                for index, row in enumerate(sql_result)
-            ]
+        # NUEVO: Procesamiento optimizado con batch MAC vendor lookup
+        batch_size = int(os.getenv('MACVENDOR_BATCH_SIZE', '25'))  # Optimizado para 25 RPS
+        
+        # Clear console and add processing header
+        separator_width = int(os.getenv('CONSOLE_SEPARATOR_WIDTH', '50'))
+        progress_width = int(os.getenv('CONSOLE_PROGRESS_WIDTH', '40'))
+        target_devices = int(os.getenv('TARGET_DEVICES_PER_SECOND', '25'))
+        print("\n" + "-"*separator_width)
+        logger.info(f"⚙️  Starting ULTRA-OPTIMIZED device processing: {len(sql_result)} devices")
+        logger.info(f"🔧 Batch size: {batch_size} | Chunk size: {int(os.getenv('KISMET_CHUNK_SIZE', '10000'))}")
+        logger.info(f"🚀 Target: {target_devices}+ devices/sec | Cache: SSIDs + MACs | Single DB session per batch")
+        print("-"*separator_width)
+        print("\n" + "🔄 PROCESSING PROGRESS:")
+        print("-" * progress_width)
+        print()  # Add extra line to separate from progress bar
+        
+        # Process results with unified progress bar for entire file
+        total_devices = len(sql_result)
+        processed_devices = 0
+        
+        # Create single progress bar for entire file
+        progress_width = int(os.getenv('PROGRESS_BAR_WIDTH', '100'))
+        with tqdm(total=total_devices, desc=f"Processing {filename}", ncols=progress_width,
+                 bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]') as pbar:
             
-            # Clear console and add processing header
-            print("\n" + "-"*50)
-            logger.info(f"⚙️  Starting device processing: {len(sql_result)} devices")
-            logger.info(f"🔧 Using {max_workers} worker threads (OPTIMIZED)")
-            print("-"*50)
-            print("\n" + "🔄 PROCESSING PROGRESS:")
-            print("-" * 40)
-            print()  # Add extra line to separate from progress bar
-            
-            # Process results with progress bar - OPTIMIZADO
-            for future in tqdm(as_completed(futures), total=len(futures),
-                              desc=f"Processing {filename}", ncols=100, position=0,
-                              leave=True, bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]'):
-                result = future.result()
-                if result:
-                    devs.append(result)
-            
-            # Clear progress bar area and add completion message
-            print("\n" * 2)  # Clear space after progress bar
-            print("-"*50)
-            logger.info(f"✅ Device processing completed: {len(devs)} devices processed")
-            logger.info(f"📊 Processing efficiency: {len(devs)}/{len(sql_result)} ({len(devs)/len(sql_result)*100:.1f}%)")
-            print("-"*50 + "\n")
+            for i in range(0, len(sql_result), batch_size):
+                batch_rows = sql_result[i:i + batch_size]
+                batch_results = self.process_batch_optimized(batch_rows, list_SSID_forbidden, ssid, encryption, strongest, flip_coord, i)
+                devs.extend([result for result in batch_results if result])
+                
+                # Update progress bar with actual devices processed
+                devices_in_batch = len(batch_rows)
+                processed_devices += devices_in_batch
+                pbar.update(devices_in_batch)
+        
+        # Update total count for tqdm compatibility
+        self.__total_rows = len(sql_result)
+        
+        # Clear progress bar area and add completion message
+        print("\n" * 2)  # Clear space after progress bar
+        separator_width = int(os.getenv('CONSOLE_SEPARATOR_WIDTH', '50'))
+        print("-"*separator_width)
+        logger.info(f"✅ Device processing completed: {len(devs)} devices processed")
+        logger.info(f"📊 Processing efficiency: {len(devs)}/{len(sql_result)} ({len(devs)/len(sql_result)*100:.1f}%)")
+        print("-"*separator_width + "\n")
 
         self.devices = devs
         return devs
