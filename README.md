@@ -22,16 +22,230 @@ A comprehensive Kismet file processing system with intelligent MAC vendor lookup
 
 ## 🛠️ **Installation**
 
+### 🚀 **Automated Installation (Recommended)**
+
+The easiest way to install and compile the Kismet Processor on Ubuntu:
+
+```bash
+# Make the installation script executable
+chmod +x install_dependencies_ubuntu.sh
+
+# Run the automated installation
+./install_dependencies_ubuntu.sh
+```
+
+**What the automated installation does:**
+- ✅ Installs all system dependencies
+- ✅ Creates Python virtual environment
+- ✅ Installs Python packages
+- ✅ Compiles the application with PyInstaller
+- ✅ Creates desktop application
+- ✅ Sets up launcher scripts
+- ✅ Copies configuration files
+
+**What the script creates:**
+- 🖥️ **Desktop Application**: Integrated with Ubuntu applications menu
+- 📜 **Launcher Scripts**: `run_kismet_compiled.sh` and `run_kismet_source.sh`
+- 🎯 **Compiled Executable**: Standalone application in `dist/` folder
+- ⚙️ **Configuration Template**: Pre-configured `.env` file
+- 🔗 **Desktop Shortcut**: Ready-to-use desktop icon
+
+**After automated installation, you can run the app:**
+- 📱 **Desktop App**: Search for "BeExact Kismet Processor" in applications
+- 🖱️ **Double-click**: `BeExact_Kismet_Processor.desktop`
+- 📜 **Script**: `./run_kismet_compiled.sh` (compiled version)
+- 🐍 **Script**: `./run_kismet_source.sh` (development version)
+
+**Installation Requirements:**
+- Ubuntu 18.04+ (tested on 20.04, 22.04)
+- 4GB+ RAM (for compilation)
+- 2GB+ free disk space
+- Internet connection (for dependencies and API)
+- sudo privileges (for system packages)
+
+### 📋 **Manual Installation**
+
+If you prefer manual installation or are not using Ubuntu:
+
 1. **Clone the repository**
-2. **Install dependencies:**
+2. **Install system dependencies:**
    ```bash
+   # Ubuntu/Debian
+   sudo apt update
+   sudo apt install -y python3-dev python3-pip python3-venv build-essential
+   
+   # Install geospatial dependencies
+   sudo apt install -y libcairo2-dev libgirepository1.0-dev
+   ```
+
+3. **Create virtual environment:**
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+4. **Install Python dependencies:**
+   ```bash
+   pip install --upgrade pip
    pip install -r requirements.txt
    ```
-3. **Configure environment variables** (see Configuration section)
-4. **Run the processor:**
+
+5. **Configure environment variables** (see Configuration section)
+
+6. **Run the processor:**
    ```bash
    python kismet_export.py
    ```
+
+### 📦 **Compilation (Optional)**
+
+To create a standalone executable:
+
+```bash
+# Install PyInstaller
+pip install pyinstaller
+
+# Clean previous builds
+rm -rf build/ dist/
+
+# Compile the application
+pyinstaller main.spec
+
+# Run compiled version
+cd dist/export_kismet_to_csv/
+./export_kismet_to_csv
+```
+
+## 🚀 **Quick Start Guide**
+
+### **Option 1: One-Command Installation (Ubuntu)**
+```bash
+# Download and run the automated installer
+curl -O https://raw.githubusercontent.com/your-repo/install_dependencies_ubuntu.sh
+chmod +x install_dependencies_ubuntu.sh
+./install_dependencies_ubuntu.sh
+```
+
+### **Option 2: Fast Development Setup**
+```bash
+# Clone and setup for development
+git clone <repository-url>
+cd beexact-kismet-processor
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python kismet_export.py
+```
+
+### **Option 3: Docker Installation (Coming Soon)**
+```bash
+# Using Docker for isolated environment
+docker build -t kismet-processor .
+docker run -v /opt/kismetFiles:/data kismet-processor
+```
+
+## 🎯 **Installation Comparison**
+
+| Feature | Automated Script | Manual Installation |
+|---------|------------------|-------------------|
+| **Time Required** | ~10-15 minutes | ~30-45 minutes |
+| **Technical Knowledge** | Beginner | Intermediate |
+| **Desktop Integration** | ✅ Full integration | ❌ Manual setup |
+| **Compiled Executable** | ✅ Automatic | ⚙️ Manual compilation |
+| **Error Handling** | ✅ Built-in fixes | 🛠️ Manual debugging |
+| **Customization** | ⚙️ Standard setup | ✅ Full control |
+| **Updates** | 🔄 Re-run script | 🛠️ Manual process |
+
+## 🎯 **Installation Scenarios**
+
+### **Scenario 1: Production Server (Ubuntu) - RECOMMENDED**
+- **Use**: `./install_dependencies_ubuntu.sh`
+- **Best for**: End users, production deployment, demo setups
+- **Benefits**: 
+  - ✅ Complete setup in one command
+  - ✅ Desktop application ready
+  - ✅ Compiled executable included
+  - ✅ Error handling built-in
+
+### **Scenario 2: Development Environment**
+- **Use**: Manual installation with virtual environment
+- **Best for**: Developers, code contributors, customization
+- **Benefits**: 
+  - ✅ Easy debugging and modification
+  - ✅ Faster development iteration
+  - ✅ Custom dependency versions
+  - ✅ Source code access
+
+### **Scenario 3: Portable Application**
+- **Use**: Pre-compiled executable distribution
+- **Best for**: Field deployment, offline usage
+- **Benefits**: 
+  - ✅ No Python dependencies needed
+  - ✅ Single folder deployment
+  - ✅ Works on any Ubuntu system
+  - ✅ Minimal setup required
+
+### **Scenario 4: CI/CD Pipeline**
+- **Use**: `pip install -r requirements.txt`
+- **Best for**: Automated builds, testing, containerization
+- **Benefits**: 
+  - ✅ Reproducible builds
+  - ✅ Automated testing
+  - ✅ Docker-friendly
+  - ✅ Version control integration
+
+## 🔧 **Installation Troubleshooting**
+
+### **Common Issues and Solutions:**
+
+#### **Issue: `python3-gi-dev not found`**
+```bash
+# Solution: Install correct package names
+sudo apt install -y libgirepository1.0-dev python3-gi
+```
+
+#### **Issue: `PyGObject compilation failed`**
+```bash
+# Solution: Install system dependencies first
+sudo apt install -y python3-dev libcairo2-dev pkg-config
+```
+
+#### **Issue: `Repository errors (PostgreSQL/MongoDB)`**
+```bash
+# Solution: Clean problematic repositories
+sudo rm -f /etc/apt/sources.list.d/pgdg.list
+sudo rm -f /etc/apt/sources.list.d/pgadmin4.list
+sudo apt update
+```
+
+#### **Issue: `Permission denied` on script execution**
+```bash
+# Solution: Make script executable
+chmod +x install_dependencies_ubuntu.sh
+```
+
+#### **Issue: Virtual environment not activating**
+```bash
+# Solution: Install python3-venv
+sudo apt install -y python3-venv
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### **Verification Commands:**
+```bash
+# Check Python version
+python3 --version
+
+# Check if virtual environment is active
+which python
+
+# Verify main dependencies
+python3 -c "import pandas, geopandas, sentence_transformers; print('✅ All dependencies OK')"
+
+# Test application startup
+python kismet_export.py --help
+```
 
 ## ⚙️ **.env File Configuration**
 
