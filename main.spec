@@ -44,14 +44,14 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='kismet_to_csv',
+    name='export_kismet_to_csv',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,
+    console=True,
     icon='icon/export-csv-32.png'
 )
 
@@ -63,5 +63,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='kismet_to_csv''
+    name='export_kismet_to_csv'
 )

@@ -357,12 +357,6 @@ ADVANCE_VERBOSE=0
 BASIC_VERBOSE=0
 ```
 
-### 🧠 **Sentence Transformers Configuration**
-```bash
-# Enable sentence transformer for provider matching
-ENABLE_SENTENCE_TRANSFORMER=1
-```
-
 ## 🎯 **Implemented Improvements (v2.5.0)**
 
 ### ⚡ **Performance Optimizations**

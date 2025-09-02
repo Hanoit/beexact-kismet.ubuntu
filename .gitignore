@@ -1,5 +1,4 @@
 /.env
-/_.env
 /build/
 /dist/
 /.cursor/
@@ -7,4 +6,4 @@
 /*.csv
 *.kismet
 *.log
-/venv/
+/venv/s
