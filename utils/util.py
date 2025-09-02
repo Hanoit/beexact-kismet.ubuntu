@@ -134,7 +134,7 @@ def parse_vendor(mac_address, session, sequential_id=None):
     return finder.get_vendor(mac_address, sequential_id)
 
 
-# NUEVA FUNCIÓN OPTIMIZADA PARA BATCH PROCESSING
+# NEW OPTIMIZED FUNCTION FOR BATCH PROCESSING
 def parse_vendors_batch(mac_addresses, session, sequential_ids=None):
     """
     Parse multiple MAC addresses in batch for better performance

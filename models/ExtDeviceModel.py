@@ -6,7 +6,19 @@ from utils import util
 
 
 class ExtDeviceModel(model.Device):
-    """Extended device model that adds encryption, vendor, provider, RSSI, and accuracy."""
+    """
+    Extended device model that adds encryption, vendor, provider, RSSI, and accuracy.
+    
+    This class extends the base Device model from kismetanalyzer to include
+    additional fields needed for vendor identification and signal analysis.
+    
+    Key features:
+    - Vendor lookup through macvendors.com API
+    - Provider identification based on SSID patterns
+    - RSSI signal strength tracking
+    - Location accuracy measurements
+    - Sequential ID for batch processing tracking
+    """
 
     def __init__(self, session=None, base=None, **kwargs):
         """
@@ -154,8 +166,8 @@ class ExtDeviceModel(model.Device):
         self.phyname = parse_phyname(dev)
         self.encryption = parse_encryption(dev)
         
-        # NO llamar vendor/provider - se harán en batch después
-        self.vendor = None  # Se asignará después en batch
+        # DO NOT call vendor/provider - will be done in batch later
+        self.vendor = None  # Will be assigned later in batch
         self.provider = util.parse_provider(self.mac, self.ssid, self.__session)
         process_without_location = bool(int(os.getenv('PROCESS_WITHOUT_LOCATION', 1)))
         

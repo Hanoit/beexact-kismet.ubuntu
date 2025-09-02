@@ -3,12 +3,12 @@ import pandas as pd
 from geopy.distance import geodesic
 
 data = [
-    {"devmac": "00:02:6F:A6:F5:AB", "strongest_signal": -83, "max_lat": 51.475219592, "max_lon": 5.764474665},
-    {"devmac": "00:02:6F:A6:F5:AC", "strongest_signal": -85, "max_lat": 51.475219592, "max_lon": 5.764975000},  # Ajustado para estar cerca del primero
-    {"devmac": "00:02:6F:A6:F5:AD", "strongest_signal": -80, "max_lat": 51.475220000, "max_lon": 5.764574000},  # Ajustado para estar cerca del primero
-    {"devmac": "00:02:6F:A6:F5:AE", "strongest_signal": -70, "max_lat": 51.475219592, "max_lon": 5.764474665},  # Mismo lugar que el primero
-    {"devmac": "00:02:6F:A1:F5:AE", "strongest_signal": -70, "max_lat": 51.475000000, "max_lon": 5.765000000},  # Más lejos, pero podría estar cerca de los demás
-    {"devmac": "00:02:6F:A6:F5:AE", "strongest_signal": -70, "max_lat": 51.475219592, "max_lon": 5.765474000}   # Cerca de los otros
+    {"devmac": "00:02:6F:A6:F5:AB", "strongest_signal":-83, "max_lat": 51.475219592, "max_lon": 5.764474665},
+    {"devmac": "00:02:6F:A6:F5:AC", "strongest_signal":-85, "max_lat": 51.475219592, "max_lon": 5.764975000},  # Ajustado para estar cerca del primero
+    {"devmac": "00:02:6F:A6:F5:AD", "strongest_signal":-80, "max_lat": 51.475220000, "max_lon": 5.764574000},  # Ajustado para estar cerca del primero
+    {"devmac": "00:02:6F:A6:F5:AE", "strongest_signal":-70, "max_lat": 51.475219592, "max_lon": 5.764474665},  # Mismo lugar que el primero
+    {"devmac": "00:02:6F:A1:F5:AE", "strongest_signal":-70, "max_lat": 51.475000000, "max_lon": 5.765000000},  # Further away, but could be close to others
+    {"devmac": "00:02:6F:A6:F5:AE", "strongest_signal":-70, "max_lat": 51.475219592, "max_lon": 5.765474000}  # Cerca de los otros
 ]
 
 
@@ -28,7 +28,7 @@ def test_filtering():
     # Crear DataFrame
     df = pd.DataFrame(data)
 
-    # Crear geometría de puntos
+    # Create point geometry
     gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.max_lon, df.max_lat), crs="EPSG:4326")
 
     # Convertir a un CRS proyectado adecuado para medir distancias en metros
@@ -41,13 +41,13 @@ def test_filtering():
         # Crear la matriz de distancias
         distance_matrix = group.geometry.apply(lambda geom: group.distance(geom)).values
 
-        # Iterar sobre la matriz para eliminar los registros con señal más débil
+        # Iterate over matrix to remove records with weaker signal
         to_keep = set(range(len(group)))  # Indices de registros a mantener
         for i in range(len(group)):
             for j in range(i + 1, len(group)):
                 if i in to_keep and j in to_keep:
                     if distance_matrix[i, j] <= max_distance:
-                        # Comparar señales y eliminar el de señal más débil
+                        # Compare signals and remove the one with weaker signal
                         if group.iloc[i]['strongest_signal'] > group.iloc[j]['strongest_signal']:
                             to_keep.discard(j)
                         else:
@@ -60,6 +60,7 @@ def test_filtering():
 
     # Ver el resultado filtrado
     print(filtered_gdf)
+
 
 if __name__ == '__main__':
     # Ejecuta el caso de prueba

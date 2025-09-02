@@ -18,11 +18,11 @@ class MACVendorTable(Base):
 class MACsNotFoundTable(Base):
     __tablename__ = 'macs_not_found'
     
-    id = Column(String(8), primary_key=True)  # MAC ID como llave primaria única
+    id = Column(String(8), primary_key=True)  # MAC ID as unique primary key
     last_consulted = Column(DateTime, nullable=False, default=datetime.utcnow)  # Fecha y hora de consulta
     
     __table_args__ = (
-        Index('idx_mac_id', 'id'),  # Índice en la llave primaria
+        Index('idx_mac_id', 'id'),  # Index on primary key
     )
 
 

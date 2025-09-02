@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 # Load environment variables
 load_dotenv()
 
-# CONFIGURACIÓN ADAPTIVA DESDE .ENV - OPTIMIZADA
+# ADAPTIVE CONFIGURATION FROM .ENV - OPTIMIZED
 CHECK_INTERVAL = float(os.getenv('CHECK_INTERVAL', '300'))
 ENABLE_PERFORMANCE_MONITOR = os.getenv('ENABLE_PERFORMANCE_MONITOR', 'false').lower() == 'true'
 ENABLE_PROGRESS_BAR = os.getenv('ENABLE_PROGRESS_BAR', '1') == '1'
@@ -77,7 +77,7 @@ class FileQueueProcessor:
         }
         self.__start_worker()
         
-        # Log configuración adaptiva
+        # Log adaptive configuration
         logger.info("FileQueueProcessor Configuration - ADAPTIVA Y OPTIMIZADA:")
         logger.info(f"  - Max Queue Size: {max_queue_size}")
         logger.info(f"  - Check Interval: {CHECK_INTERVAL:.0f}s")
@@ -99,7 +99,17 @@ class FileQueueProcessor:
         logger.info("File queue worker thread started")
     
     def __update_processing_stats(self, filename: str, processing_time: float, success: bool):
-        """Actualizar estadísticas avanzadas de procesamiento"""
+        """
+        Update internal statistics for file processing performance tracking.
+        
+        Tracks fastest/slowest files, success rates, and calculates throughput.
+        
+        Args:
+            filename (str): Name of the processed file
+            processing_time (float): Time taken to process the file in seconds
+            success (bool): Whether processing was successful
+        """
+
         if success:
             self.__processing_stats['total_processed'] += 1
         else:
@@ -113,12 +123,12 @@ class FileQueueProcessor:
         if total_files > 0:
             self.__processing_stats['average_processing_time'] = self.__processing_stats['total_processing_time'] / total_files
         
-        # Actualizar archivo más rápido
+        # Update fastest file
         if processing_time < self.__processing_stats['fastest_file_time']:
             self.__processing_stats['fastest_file_time'] = processing_time
             self.__processing_stats['fastest_file'] = filename
         
-        # Actualizar archivo más lento
+        # Update slowest file
         if processing_time > self.__processing_stats['slowest_file_time']:
             self.__processing_stats['slowest_file_time'] = processing_time
             self.__processing_stats['slowest_file'] = filename
@@ -267,7 +277,7 @@ class FileQueueProcessor:
                 # Process the file with advanced statistics
                 start_time = time.time()
                 
-                # Log performance monitoring si está habilitado
+                # Log performance monitoring if enabled
                 if ENABLE_PERFORMANCE_MONITOR:
                     cpu_before = psutil.cpu_percent()
                     memory_before = psutil.virtual_memory().percent
@@ -278,10 +288,10 @@ class FileQueueProcessor:
                     self.__processor.process_file(file_path)
                     processing_time = time.time() - start_time
                     
-                    # Actualizar estadísticas avanzadas
+                    # Update advanced statistics
                     self.__update_processing_stats(filename, processing_time, success=True)
                     
-                    # Log performance después si está habilitado
+                    # Log performance after if enabled
                     if ENABLE_PERFORMANCE_MONITOR:
                         cpu_after = psutil.cpu_percent()
                         memory_after = psutil.virtual_memory().percent
@@ -389,7 +399,7 @@ class FileQueueProcessor:
         elapsed_time = time.time() - stats['start_time']
         elapsed_str = str(timedelta(seconds=int(elapsed_time)))
         
-        # Formatear tiempos de archivos más rápido/lento
+        # Format fastest/slowest file times
         fastest_time = stats['fastest_file_time'] if stats['fastest_file_time'] != float('inf') else 0
         
         summary = f"""

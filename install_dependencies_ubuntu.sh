@@ -4,16 +4,16 @@
 echo "🐧 Installing BeExact Kismet Processor on Ubuntu"
 echo "================================================"
 
-# Limpiar repositorios problemáticos
+# Clean problematic repositories
 echo "🧹 Cleaning problematic repositories..."
 sudo rm -f /etc/apt/sources.list.d/pgdg.list 2>/dev/null || true
 sudo rm -f /etc/apt/sources.list.d/pgadmin4.list 2>/dev/null || true
 
-# 1. Actualizar sistema
+# 1. Update system
 echo "📦 Updating system..."
 sudo apt update
 
-# 2. Instalar dependencias básicas de desarrollo
+# 2. Install basic development dependencies
 echo "🔧 Installing basic development dependencies..."
 sudo apt install -y \
     python3-dev \
@@ -24,7 +24,7 @@ sudo apt install -y \
     libffi-dev \
     libssl-dev
 
-# 3. Instalar dependencias de Cairo y GObject (nombres correctos)
+# 3. Install Cairo and GObject dependencies (correct names)
 echo "🎨 Installing Cairo and GObject dependencies..."
 sudo apt install -y \
     libcairo2-dev \
@@ -32,26 +32,26 @@ sudo apt install -y \
     gir1.2-gtk-3.0 \
     libglib2.0-dev
 
-# 4. Instalar paquetes Python precompilados del sistema
+# 4. Install precompiled Python system packages
 echo "📦 Installing precompiled Python packages..."
 sudo apt install -y \
     python3-gi \
     python3-cairo \
     python3-psutil || echo "⚠️  python3-psutil not available, will install via pip"
 
-# 5. Crear entorno virtual (opcional)
+# 5. Create virtual environment (optional)
 echo "🐍 Creating virtual environment..."
 python3 -m venv .venv
 source .venv/bin/activate
 
-# 6. Actualizar pip
+# 6. Update pip
 pip install --upgrade pip
 
-# 7. Instalar dependencias Python limpias
+# 7. Install clean Python dependencies
 echo "📦 Installing Python packages..."
 pip install -r requirements.txt
 
-# 8. Limpiar compilaciones anteriores y compilar solución
+# 8. Clean previous builds and compile solution
 echo "🧹 Cleaning previous builds..."
 rm -rf build/
 rm -rf dist/
@@ -65,10 +65,10 @@ pip install pyinstaller
 echo "🔨 Compiling Solution..."
 pyinstaller main.spec
 
-# Variables para rutas absolutas
+# Variables for absolute paths
 PROJECT_DIR=$(pwd)
 
-# Detectar automáticamente el nombre del ejecutable ← MEJORADO
+# Automatically detect executable name - IMPROVED
 echo "🔍 Detecting build output..."
 if [ -d "dist" ]; then
     EXECUTABLE_NAME=$(ls dist/ | head -n1)
@@ -92,7 +92,7 @@ if [ -d "dist/$EXECUTABLE_NAME" ]; then
     echo "📊 Build size:"
     du -sh dist/$EXECUTABLE_NAME/ 2>/dev/null || echo "Build directory created"
 
-    # 9. Copiar .env al directorio del ejecutable
+    # 9. Copy .env to executable directory
     echo "📋 Copying configuration files..."
     if [ -f ".env" ]; then
         cp .env dist/$EXECUTABLE_NAME/
@@ -113,10 +113,10 @@ ENV_EOF
         echo "📝 Template .env created in dist/$EXECUTABLE_NAME/"
     fi
 
-    # 10. Crear aplicación de escritorio
+    # 10. Create desktop application
     echo "🖥️  Creating desktop application..."
     
-    # Crear archivo .desktop
+    # Create .desktop file
     cat > BeExact_Kismet_Processor.desktop << EOF
 [Desktop Entry]
 Version=1.0
@@ -143,13 +143,13 @@ Name=Edit Configuration
 Exec=gedit $PROJECT_DIR/dist/$EXECUTABLE_NAME/.env
 EOF
 
-    # Hacer ejecutable
+    # Make executable
     chmod +x BeExact_Kismet_Processor.desktop
 
-    # Crear scripts de acceso directo ← CORREGIDO
+    # Create launcher scripts - FIXED
     echo "🚀 Creating launcher scripts..."
     
-    # Script para ejecutar compilado
+    # Script to run compiled version
     cat > run_kismet_compiled.sh << EOF
 #!/bin/bash
 echo "🚀 Starting BeExact Kismet Processor (Compiled)"
@@ -180,7 +180,7 @@ EOF
 
     chmod +x run_kismet_compiled.sh
 
-    # Script para ejecutar desde código fuente
+    # Script to run from source code
     cat > run_kismet_source.sh << 'EOF'
 #!/bin/bash
 echo "🚀 Starting BeExact Kismet Processor (Source)"
@@ -206,17 +206,17 @@ EOF
 
     chmod +x run_kismet_source.sh
 
-    # 11. Instalar aplicación de escritorio
+    # 11. Install desktop application
     echo "📱 Installing desktop application..."
     
-    # Copiar a aplicaciones del usuario
+    # Copy to user applications
     mkdir -p ~/.local/share/applications
     cp BeExact_Kismet_Processor.desktop ~/.local/share/applications/
     
-    # Actualizar cache de aplicaciones
+    # Update applications cache
     update-desktop-database ~/.local/share/applications/ 2>/dev/null || true
     
-    # Copiar al escritorio si existe
+    # Copy to desktop if it exists
     if [ -d "$HOME/Desktop" ]; then
         cp BeExact_Kismet_Processor.desktop "$HOME/Desktop/"
         echo "✅ Desktop shortcut created"

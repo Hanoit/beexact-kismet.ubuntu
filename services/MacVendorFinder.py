@@ -20,29 +20,29 @@ logger = logging.getLogger(__name__)
 # Load environment variables from .env file
 load_dotenv('.env')
 
-# CONFIGURACIÓN ADAPTIVA DESDE .ENV - OPTIMIZADA PARA PERFORMANCE
-# Configuración de plan de MacVendors
+# ADAPTIVE CONFIGURATION FROM .ENV - OPTIMIZED FOR PERFORMANCE
+# MacVendors plan configuration
 PLAN_TYPE = os.getenv('MACVENDOR_PLAN_TYPE', 'free').lower()
 REQUESTS_PER_SECOND = int(os.getenv('MACVENDOR_REQUESTS_PER_SECOND', '1' if PLAN_TYPE == 'free' else '25'))
 REQUESTS_PER_DAY = int(os.getenv('MACVENDOR_REQUESTS_PER_DAY', '1000' if PLAN_TYPE == 'free' else '100000'))
 
-# Rate limiting adaptativo basado en plan
+# Adaptive rate limiting based on plan
 MIN_API_INTERVAL = 1.0 / REQUESTS_PER_SECOND if REQUESTS_PER_SECOND > 0 else float(os.getenv('MACVENDOR_API_INTERVAL', '1.0'))
 MACVENDOR_API_TIMEOUT = float(os.getenv('MACVENDOR_API_TIMEOUT', '8.0'))
 
-# Configuración de cache optimizada
+# Optimized cache configuration
 MACS_NOT_FOUND_CACHE_MONTHS = int(os.getenv('MACS_NOT_FOUND_CACHE_MONTHS', '6'))
 
-# Configuración de batch processing
+# Batch processing configuration
 BATCH_SIZE = int(os.getenv('MACVENDOR_BATCH_SIZE', '25'))
 MAX_WORKERS = int(os.getenv('MACVENDOR_MAX_WORKERS', '25'))
 BATCH_TIMEOUT = float(os.getenv('MACVENDOR_BATCH_TIMEOUT', '35.0'))
 
-# Global variables for rate limiting and retry - OPTIMIZADOS
+# Global variables for rate limiting and retry - OPTIMIZED
 current_api_interval = MIN_API_INTERVAL
 rate_limit_lock = threading.Lock()
 api_call_lock = threading.Lock()
-# Database lock - OPTIMIZADO para batch operations
+# Database lock - OPTIMIZED for batch operations
 db_lock = threading.Lock()
 
 # Configure logging
@@ -58,14 +58,14 @@ DB_RETRY_DELAY = float(os.getenv('DB_RETRY_DELAY', '0.1'))  # 100ms base delay
 
 def retry_db_operation(operation_func, max_attempts=DB_RETRY_ATTEMPTS, base_delay=DB_RETRY_DELAY):
     """
-    Ejecuta una operación de base de datos con reintentos en caso de bloqueo
+    Execute a database operation with retries in case of database lock
     """
     for attempt in range(max_attempts):
         try:
             return operation_func()
         except OperationalError as e:
             if "database is locked" in str(e).lower() and attempt < max_attempts - 1:
-                # Esperar con backoff exponencial + jitter
+                # Wait with exponential backoff + jitter
                 delay = base_delay * (2 ** attempt) + random.uniform(0, 0.05)
                 time.sleep(delay)
                 logger.debug(f"Database locked, retrying in {delay:.3f}s (attempt {attempt + 1}/{max_attempts})")
@@ -94,8 +94,8 @@ def increase_rate_limit():
     global current_api_interval
     with rate_limit_lock:
         old_interval = current_api_interval
-        # Incremento más agresivo para recuperación rápida
-        current_api_interval = min(current_api_interval * 1.5, 2.0)  # Máximo 2s
+        # More aggressive increment for fast recovery
+        current_api_interval = min(current_api_interval * 1.5, 2.0)  # Maximum 2s
         if old_interval != current_api_interval and VERBOSE_ADVANCE:
             logger.warning(f"⚠️ Rate limit hit! Increasing API interval to {current_api_interval:.3f}s")
 
@@ -104,11 +104,21 @@ def decrease_rate_limit():
     """Decrease the API call interval on successful calls - OPTIMIZADO"""
     global current_api_interval
     with rate_limit_lock:
-        # Reducción más agresiva para máximo performance
+        # More aggressive reduction for maximum performance
         current_api_interval = max(current_api_interval * 0.8, MIN_API_INTERVAL)
 
 
 def fetch_vendor_from_api(mac_id, sequential_id):
+    """
+    Fetch vendor information from MacVendors API with adaptive rate limiting.
+    
+    Args:
+        mac_id (str): MAC address formatted for API lookup (XX-XX-XX format)
+        sequential_id (str): Sequential ID for tracking and logging purposes
+        
+    Returns:
+        str: Vendor name if found, "NOT_FOUND" if MAC not in database, None on error
+    """
     global current_api_interval
 
     # Get API token
@@ -132,7 +142,7 @@ def fetch_vendor_from_api(mac_id, sequential_id):
         if current_api_interval > 0:
             time.sleep(current_api_interval)
         
-        # Hacer la llamada a la API con timeout optimizado y configuración robusta
+        # Make API call with optimized timeout and robust configuration
         response = requests.get(
             url,
             headers={**headers, 'Connection': 'close'},  # Evitar conexiones persistentes
@@ -145,23 +155,23 @@ def fetch_vendor_from_api(mac_id, sequential_id):
             if api_token:
                 # Paid API - JSON
                 try:
-                    decrease_rate_limit()  # Reducir intervalo en éxito
+                    decrease_rate_limit()  # Reduce interval on success
                     data = response.json()
                     return data.get('organization_name', None)
                 except ValueError:
                     return response.text.strip()
             else:
                 # Free API - plain text
-                decrease_rate_limit()  # Reducir intervalo en éxito
+                decrease_rate_limit()  # Reduce interval on success
                 return response.text.strip()
         elif response.status_code == 429:
-            # Rate limit exceeded - OPTIMIZADO para recuperación rápida
+            # Rate limit exceeded - OPTIMIZED for fast recovery
             if VERBOSE_ADVANCE:
                 seq_info = f" [{sequential_id}]" if sequential_id else ""
                 logger.warning(f"MacVendor API rate limit exceeded for MAC {mac_id}{seq_info}| Response: {response.text}")
             # Increase rate limiting
             increase_rate_limit()
-            # NO recursión - retornar None para evitar stack overflow
+            # NO recursion - return None to avoid stack overflow
             return None
         elif response.status_code == 404:
             # MAC not found - return special value to indicate this
@@ -190,7 +200,7 @@ class MacVendorFinder:
         self.__batch_cache = defaultdict(dict)  # Cache para batch processing
 
     def process_mac_batch(self, mac_addresses, sequential_ids):
-        """Procesar múltiples MACs en paralelo para mejor performance"""
+        """Process multiple MACs in parallel for better performance"""
         if not mac_addresses:
             return {}
         
@@ -201,7 +211,7 @@ class MacVendorFinder:
             batch_macs = mac_addresses[i:i + BATCH_SIZE]
             batch_ids = sequential_ids[i:i + BATCH_SIZE] if sequential_ids else [None] * len(batch_macs)
             
-            # Procesar batch en paralelo con configuración adaptiva
+            # Process batch in parallel with adaptive configuration
             with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(batch_macs), MAX_WORKERS)) as executor:
                 future_to_mac = {
                     executor.submit(self.get_vendor, mac, seq_id): mac 
@@ -236,7 +246,7 @@ class MacVendorFinder:
                                 future.cancel()
                                 results[mac] = None
                         
-                        # Log detallado para diagnóstico
+                        # Detailed logging for diagnostics
                         if VERBOSE_ADVANCE:
                             logger.warning(f"Unfinished MACs: {unfinished_macs[:3]}{'...' if len(unfinished_macs) > 3 else ''}")
                             logger.info(f"Batch config: size={len(batch_macs)}, workers={min(len(batch_macs), MAX_WORKERS)}, timeout={BATCH_TIMEOUT}s, api_timeout={MACVENDOR_API_TIMEOUT}s")
@@ -298,7 +308,8 @@ class MacVendorFinder:
             logger.error(f"MacVendor Api does not work: \n {e}")
             return None
 
-        if vendor_name == "NOT_FOUND" or "Unknown":
+        if vendor_name == "NOT_FOUND" or vendor_name == "Unknown":
+
             # MAC no encontrada - guardar o actualizar en tabla NOT_FOUND
             def save_not_found():
                 with db_lock:

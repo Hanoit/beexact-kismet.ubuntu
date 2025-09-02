@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 load_dotenv('.env')
 
-# CONFIGURACIÓN ADAPTIVA PARA PERFORMANCE
+# ADAPTIVE CONFIGURATION FOR PERFORMANCE
 CHUNK_SIZE = int(os.getenv('KISMET_CHUNK_SIZE', '10000'))
 # Variables NUM_WORKERS y PROCESS_WORKERS eliminadas - no se usaban para paralelismo real
 ENABLE_PERFORMANCE_MONITOR = os.getenv('ENABLE_PERFORMANCE_MONITOR', 'false').lower() == 'true'
@@ -29,7 +29,7 @@ class DirectoryFilesProcessor:
         self.__output_directory = os.getenv("OUT_DIRECTORY", ".")
         self.__Session = session_factory
         
-        # Log configuración de performance
+        # Log performance configuration
         logger.info("DirectoryFilesProcessor Configuration - ADAPTIVA:")
         logger.info(f"  - Chunk Size: {CHUNK_SIZE:,} devices per chunk")
         logger.info(f"  - CPU cores: {multiprocessing.cpu_count()}")
@@ -46,7 +46,7 @@ class DirectoryFilesProcessor:
             session.close()
 
     def get_system_stats(self):
-        """Obtener estadísticas del sistema para monitoreo de performance"""
+        """Get system statistics for performance monitoring"""
         if not ENABLE_PERFORMANCE_MONITOR:
             return {}
         
@@ -67,7 +67,7 @@ class DirectoryFilesProcessor:
             return {}
 
     def log_performance_stats(self, stats, stage=""):
-        """Log estadísticas de performance si está habilitado"""
+        """Log performance statistics if enabled"""
         if not ENABLE_PERFORMANCE_MONITOR or not stats:
             return
         
@@ -78,10 +78,10 @@ class DirectoryFilesProcessor:
 
     def process_file(self, file_path: str) -> bool:
         """
-        Process a single Kismet file
+        Process a single Kismet file with performance monitoring.
         
         Args:
-            file_path: Path to the Kismet file to process
+            file_path (str): Path to the Kismet file to process
             
         Returns:
             bool: True if processing was successful, False otherwise
@@ -115,12 +115,12 @@ class DirectoryFilesProcessor:
             devices = analyzer.load_devices(strongest=True)
             load_time = time.time() - load_start
             
-            # Log estadísticas de carga
+            # Log loading statistics
             device_count = len(devices) if devices else 0
             if device_count > 0:
                 logger.info(f"📱 Loaded {device_count:,} devices in {load_time:.2f}s ({device_count/load_time:.0f} devices/sec)")
             
-            # Monitoreo durante exportación
+            # Monitoring during export
             export_start = time.time()
             analyzer.export_csv(self.__output_directory)
             export_time = time.time() - export_start

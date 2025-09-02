@@ -4,6 +4,7 @@ from services.MacProviderFinder import MacProviderFinder
 
 
 class TestMacProviderFinder(unittest.TestCase):
+
     @classmethod
     def setUpClass(cls):
         cls.session = get_session()
@@ -35,7 +36,7 @@ class TestMacProviderFinder(unittest.TestCase):
         repo = MacProviderFinder(self.session)
 
         for ssid in self.test_ssids:
-            print(f"Testing Simple Searching SSID: {ssid}")  # Opcional: para ver el SSID que se está probando
+            print(f"Testing Simple Searching SSID: {ssid}")  # Optional: to see the SSID being tested
             result = repo.simple_match_provider_from_ssid(ssid)
             self.assertIsNotNone(result, f"Expected provider for SSID '{ssid}' not found.")
             self.assertIn(result.provider_name, ['Ziggo', 'TMNL', 'T-Mobile'],
@@ -50,7 +51,7 @@ class TestMacProviderFinder(unittest.TestCase):
         repo = MacProviderFinder(self.session)
 
         for ssid in self.test_ssids:
-            print(f"Testing Advance Searching SSID: {ssid}")  # Opcional: para ver el SSID que se está probando
+            print(f"Testing Advance Searching SSID: {ssid}")  # Optional: to see the SSID being tested
             result = repo.advance_match_provider_from_ssid(ssid)
             self.assertIsNotNone(result, f"Expected provider for SSID '{ssid}' not found.")
             self.assertIn(result.provider_name, ['Ziggo', 'TMNL', 'T-Mobile'],

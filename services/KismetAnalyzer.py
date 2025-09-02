@@ -52,14 +52,31 @@ class KismetAnalyzer:
 
     def process_batch_optimized(self, batch_rows, list_SSID_forbidden, ssid, encryption, strongest, flip_coord, start_index):
         """
-        Process a batch of rows with optimized MAC vendor lookup
+        Optimized batch processing of Kismet device records.
+        
+        This method processes devices in two phases:
+        1. Fast device creation without vendor lookup
+        2. Batch vendor lookup for all devices
+        
+        Args:
+            batch_rows: List of database rows to process
+            list_SSID_forbidden: List of forbidden SSID patterns
+            ssid: SSID filter (optional)
+            encryption: Encryption filter (optional)
+            strongest: Use strongest signal data
+            flip_coord: Whether to flip coordinates
+            start_index: Starting index for sequential ID generation
+            
+        Returns:
+            list: List of processed ExtDeviceModel objects with vendors assigned
         """
+
         batch_devices = []
         mac_addresses = []
         sequential_ids = []
         
-        # Fase 1: Crear dispositivos sin vendors (procesamiento rápido) - OPTIMIZADO
-        # ✅ UNA SOLA SESIÓN para todo el batch (10x más rápido)
+        # Phase 1: Create devices without vendors (fast processing) - OPTIMIZED
+        # ✅ SINGLE SESSION for entire batch (10x faster)
         session = self.__Session()
         try:
             for idx, row in enumerate(batch_rows):
@@ -70,12 +87,12 @@ class KismetAnalyzer:
                 sequential_id = f"R{current_index:0{coord_precision}d}-T{threading.current_thread().ident % thread_mod:0{decimal_places}d}"
                 
                 try:
-                    # ✅ Filtros ANTES de crear objetos (más eficiente)
+                    # ✅ Filters BEFORE creating objects (more efficient)
                     json_index = int(os.getenv('DEVICE_JSON_INDEX', '14'))
                     dev_json_str = row[json_index].decode('utf-8')
                     dev = json.loads(dev_json_str)
                     
-                    # Filtros rápidos ANTES de crear objetos pesados
+                    # Fast filters BEFORE creating heavy objects
                     if ssid and not does_ssid_matches(dev, ssid):
                         continue
                     if util.does_list_ssid_matches(dev, list_SSID_forbidden):
@@ -88,7 +105,7 @@ class KismetAnalyzer:
                         'bytes_data': row[12], 'type': row[13], 'sequential_id': sequential_id
                     }
                     
-                    # Crear dispositivo SIN vendor (se agregará después)
+                    # Create device WITHOUT vendor (will be added later)
                     extended_device = ExtDeviceModel(base=base, session=session)
                     extended_device.from_json_no_vendor(dev, flip_coord, strongest=strongest)
                     
@@ -107,7 +124,7 @@ class KismetAnalyzer:
         finally:
             session.close()
         
-        # Fase 2: Batch lookup de vendors (¡25x más rápido!)
+        # Phase 2: Batch vendor lookup (25x faster!)
         if mac_addresses:
             session = self.__Session()
             try:
@@ -230,16 +247,22 @@ class KismetAnalyzer:
         max_distance = int(os.getenv('DISTANCE_FILTER_METERS', '50'))
 
         def filter_within_distance(group, max_distance=max_distance):
-            # Crear la matriz de distancias
+            """
+            Filter devices within distance threshold using signal strength priority.
+            
+            For devices closer than max_distance, keeps only the one with strongest signal.
+            This prevents duplicate entries for the same physical device.
+            """
+            # Create distance matrix for all devices in group
             distance_matrix = group.geometry.apply(lambda geom: group.distance(geom)).values
 
-            # Iterar sobre la matriz para eliminar los registros con señal más débil
+            # Iterate over matrix to remove records with weaker signal
             to_keep = set(range(len(group)))  # Indices de registros a mantener
             for i in range(len(group)):
                 for j in range(i + 1, len(group)):
                     if i in to_keep and j in to_keep:
                         if distance_matrix[i, j] <= max_distance:
-                            # Comparar señales y eliminar el de señal más débil
+                            # Compare signals and remove the one with weaker signal
                             if group.iloc[i]['strongest_signal'] > group.iloc[j]['strongest_signal']:
                                 to_keep.discard(j)
                             else:

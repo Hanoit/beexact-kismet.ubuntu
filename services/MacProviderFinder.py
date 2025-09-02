@@ -41,7 +41,7 @@ class MacProviderFinder:
         with db_lock:
             existing_provider = provider_finder.search_by_id(mac_id)
 
-        if existing_provider:
+        if existing_provider and existing_provider.base_provider != "Unknown":
             base_provider = existing_provider.base_provider
             return base_provider
         else:
@@ -49,7 +49,7 @@ class MacProviderFinder:
             with db_lock:
                 existing_provider = provider_finder.search_sql_by_attr(f'{mac_id}', 'mac_sub_prefix')
 
-            if existing_provider:
+            if existing_provider and existing_provider.base_provider != "Unknown":
                 base_provider = existing_provider.base_provider
                 return base_provider
             return None
@@ -57,11 +57,13 @@ class MacProviderFinder:
     def get_provider(self, mac_address, ssid):
         # Try to find a provider based on the SSID
         base_provider = self.simple_match_provider_from_ssid(ssid)
-        
-        if not base_provider:
-            base_provider = self.get_provider_by_mac(mac_address)
 
-        if base_provider:
+        if not base_provider:
+            base_provider = self.advance_match_provider_from_ssid(ssid)
+            if not base_provider:
+                return self.get_provider_by_mac(mac_address)
+
+        if base_provider and base_provider != "Unknown":
             mac_id = self.format_mac_id(mac_address, position=5, separator="")
             provider_finder = RepositoryImpl(MACProviderTable, self.__session)
             with db_lock:
@@ -118,10 +120,6 @@ class MacProviderFinder:
         return None
 
     def advance_match_provider_from_ssid(self, ssid):
-        # Only perform sentence transformer matching if enabled
-        if not self.__enable_sentence_transformer:
-            return None
-            
         base_providers = RepositoryImpl(MACBaseProviderTable, self.__session)
         base_providers_result = base_providers.search_all()
         if base_providers_result:
@@ -130,5 +128,4 @@ class MacProviderFinder:
             # Find provider object by name
             if provider and base_providers_result[index_matching].provider_name == provider:
                 return base_providers_result[index_matching]
-
         return None

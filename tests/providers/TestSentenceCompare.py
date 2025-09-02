@@ -35,7 +35,7 @@ def test_find_provider():
         ("TMNL-356E51_guest1", "TMNL"),
         ("Vodafone-A1B2C3", "Vodafone"),
         ("Ziggo-D4E5F6", "Ziggo"),
-        ("Random-SSID", None),  # No debería encontrar un proveedor
+        ("Random-SSID", None),  # Should not find a provider
     ]
 
     for ssid, expected_provider in ssid_test_cases:
