@@ -6,4 +6,7 @@
 /*.csv
 *.kismet
 *.log
-/venv/s
+/venv/
+run_kismet_compiled.sh
+run_kismet_source.sh
+*.desktop
