@@ -56,6 +56,33 @@ chmod +x install_dependencies_ubuntu.sh
 - 📜 **Script**: `./run_kismet_compiled.sh` (compiled version)
 - 🐍 **Script**: `./run_kismet_source.sh` (development version)
 
+### 🔍 **How to Launch the App in Ubuntu (After Installation)**
+
+#### **Method 1: Using Show Applications (Recommended)**
+1. **Click** on "Show Applications" (9-dot grid icon) in the dock
+2. **Search** for "**BeExact Kismet Processor**" or just "**kismet**"
+3. **Click** on the "BeExact Kismet Processor" icon to launch
+
+#### **Method 2: Using Activities Overview**
+1. **Press** `Super` key (Windows key) or click "Activities" 
+2. **Type** "**BeExact Kismet Processor**" in the search bar
+3. **Click** on the application when it appears
+
+#### **Method 3: Desktop Shortcut**
+1. **Look** for "BeExact_Kismet_Processor.desktop" on your desktop
+2. **Double-click** the icon to launch
+
+#### **Method 4: Using Terminal**
+```bash
+# Run compiled version
+./run_kismet_compiled.sh
+
+# Run from source code
+./run_kismet_source.sh
+```
+
+**📌 Note**: The application will open in a terminal window since it's a command-line processor.
+
 **Installation Requirements:**
 - Ubuntu 18.04+ (tested on 20.04, 22.04)
 - 4GB+ RAM (for compilation)
@@ -296,7 +323,7 @@ MACS_NOT_FOUND_CACHE_MONTHS=6
 FILE_QUEUE_MAX_SIZE=20
 
 # Check interval for new files (seconds)
-CHECK_INTERVAL=300
+CHECK_INTERVAL=300  
 
 # Chunk size for device processing
 KISMET_CHUNK_SIZE=10000
@@ -389,9 +416,9 @@ BASIC_VERBOSE=0
 ### **Basic Execution**
 ```bash
 # Start the main processor
-python kismet_export.py
-```
-
+	python kismet_export.py
+	```
+	
 ### **Database Management**
 ```bash
 # Load vendor data
@@ -413,24 +440,24 @@ python manage_db.py export --output vendors_export.csv --table vendor --delimite
 
 ### **1. Create a Virtual Environment and Install Dependencies**
 
-```sh
-python -m venv venv
-venv\Scripts\activate  # On Windows
-source venv/bin/activate  # On macOS/Linux
-```
+	```sh
+	python -m venv venv
+	venv\Scripts\activate  # On Windows
+	source venv/bin/activate  # On macOS/Linux
+	```
 
 ### **2. Install Required Dependencies**
 
-```sh
-pip install -r requirements.txt
-```
-
+	```sh
+	pip install -r requirements.txt
+	```
+	
 ### **3. Compile the Project to an Executable (.exe)**
-Use PyInstaller with the specification file:
+	Use PyInstaller with the specification file:
 
-```sh
-pyinstaller main.spec
-```
+	```sh
+	pyinstaller main.spec
+	```
 
 ### **4. Copy the .env File**
 Copy the .env file to the root directory where the Export Kismet to CSV.exe executable is located.
@@ -438,11 +465,11 @@ Copy the .env file to the root directory where the Export Kismet to CSV.exe exec
 ### **Troubleshooting Compilation Errors**
 If you encounter issues during compilation, try the following:
 
-```sh
-pip uninstall arcgis
-pip uninstall pyinstaller
-pip install arcgis
-pip install pyinstaller
+	```sh
+	pip uninstall arcgis
+	pip uninstall pyinstaller
+	pip install arcgis
+	pip install pyinstaller
 ```
 
 #### **Resolving win32ctypes.pywin32.pywintypes.error**
